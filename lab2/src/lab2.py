@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import rospy
+import math
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Twist
@@ -12,18 +13,28 @@ class Lab2:
         """
         Class constructor
         """
-        ### REQUIRED CREDIT
-        ### Initialize node, name it 'lab2'
-        # TODO
-        ### Tell ROS that this node publishes Twist messages on the '/cmd_vel' topic
-        # TODO
-        ### Tell ROS that this node subscribes to Odometry messages on the '/odom' topic
-        ### When a message is received, call self.update_odometry
-        # TODO
-        ### Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
-        ### When a message is received, call self.go_to
-        # TODO
-        pass # delete this when you implement your code
+        # Initialize node, name it 'lab2'
+        rospy.init_node('lab2')
+
+        # Set the rate
+        self.rate = rospy.Rate(10)
+
+        # Tell ROS that this node publishes Twist messages on the '/cmd_vel' topic
+        self.speed_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+
+        # Tell ROS that this node subscribes to Odometry messages on the '/odom' topic
+        # When a message is received, call self.update_odometry
+        rospy.Subscriber('/odom', Odometry, self.update_odometry)
+
+        # Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
+        # When a message is received, call self.go_to
+        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.go_to)
+
+        #attributes to keep track of current position
+        self.px = 0.0
+        self.py = 0.0
+        self.dir = 0.0
+
 
 
 
@@ -33,23 +44,34 @@ class Lab2:
         :param linear_speed  [float] [m/s]   The forward linear speed.
         :param angular_speed [float] [rad/s] The angular speed for rotating around the body center.
         """
-        ### REQUIRED CREDIT
         ### Make a new Twist message
-        # TODO
-        ### Publish the message
-        # TODO
-        pass # delete this when you implement your code
+        twist = Twist()
+        twist.linear.x = linear_speed
+        twist.angular.z = angular_speed
 
-    
-        
+        ### Publish the message
+        self.speed_pub.publish(twist)
+
+
+
     def drive(self, distance: float, linear_speed: float):
         """
         Drives the robot in a straight line.
         :param distance     [float] [m]   The distance to cover.
         :param linear_speed [float] [m/s] The forward linear speed.
         """
-        ### REQUIRED CREDIT
-        pass # delete this when you implement your code
+        # Note the starting position
+        start_x = self.px
+        start_y = self.py
+
+        # Publish the movement to the '/cmd_vel' topic
+        # Continuously check if we have covered the distance
+        while (self.px - start_x)**2 + (self.py - start_y)**2 < distance**2:
+            self.send_speed(linear_speed, 0.0)
+            self.rate.sleep()
+
+        # Stop the robot
+        self.send_speed(0.0, 0.0)
 
 
 
@@ -59,8 +81,20 @@ class Lab2:
         :param angle         [float] [rad]   The distance to cover.
         :param angular_speed [float] [rad/s] The angular speed.
         """
-        ### REQUIRED CREDIT
-        pass # delete this when you implement your code
+        # Wrap the angle to the range [-pi, pi]
+        angle = angle % (2 * math.pi)
+
+        # Note the starting direction
+        start_dir = self.dir
+
+        # Publish the movement to the '/cmd_vel' topic
+        # Continuously check if we have covered the angle
+        while abs(self.dir - start_dir) < abs(angle):
+            self.send_speed(0.0, aspeed)
+            self.rate.sleep()
+
+        # Stop the robot
+        self.send_speed(0.0, 0.0)
 
 
 
@@ -70,8 +104,9 @@ class Lab2:
         This method is a callback bound to a Subscriber.
         :param msg [PoseStamped] The target pose.
         """
-        ### REQUIRED CREDIT
-        pass # delete this when you implement your code
+        self.rotate(math.atan2(msg.pose.position.y - self.py, msg.pose.position.x - self.px) - self.dir, 0.5)
+        self.drive(math.sqrt((msg.pose.position.y - self.py)**2 + (msg.pose.position.x - self.px)**2), 0.05)
+        self.rotate(self.dir - msg.pose.orientation.z, 0.5)
 
 
 
@@ -81,9 +116,12 @@ class Lab2:
         This method is a callback bound to a Subscriber.
         :param msg [Odometry] The current odometry information.
         """
-        ### REQUIRED CREDIT
-        # TODO
-        pass # delete this when you implement your code
+        self.px = msg.pose.pose.position.x
+        self.py = msg.pose.pose.position.y
+        quat_orig = msg.pose.pose.orientation
+        quat_list = [quat_orig.x, quat_orig.y, quat_orig.z, quat_orig.w]
+        (roll , pitch , yaw) = euler_from_quaternion(quat_list)
+        self.dir = yaw
 
 
 
