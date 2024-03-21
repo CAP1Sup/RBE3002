@@ -3,7 +3,7 @@
 import rospy
 import math
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Pose, PoseStamped
 from geometry_msgs.msg import Twist
 from tf.transformations import euler_from_quaternion
 
@@ -56,7 +56,7 @@ class Lab2:
 
     def drive(self, distance: float, linear_speed: float):
         """
-        Drives the robot in a straight line.
+        Drives the robot in a straight line. If the speed is negative, the robot moves backwards. Negative distances will be ignored
         :param distance     [float] [m]   The distance to cover.
         :param linear_speed [float] [m/s] The forward linear speed.
         """
@@ -82,14 +82,18 @@ class Lab2:
         :param angular_speed [float] [rad/s] The angular speed.
         """
         # Wrap the angle to the range [-pi, pi]
-        angle = angle % (2 * math.pi)
+        while abs(angle) > math.pi:
+            angle = angle - 2 * math.pi * (angle / abs(angle))
 
-        # Note the starting direction
-        start_dir = self.dir
+        # Invert the move speed if needed
+        aspeed = aspeed if angle > 0 else -aspeed
+
+        rospy.loginfo("Rotating by %f radians at %f rad/s", angle, aspeed)
 
         # Publish the movement to the '/cmd_vel' topic
         # Continuously check if we have covered the angle
-        while abs(self.dir - start_dir) < abs(angle):
+        start_dir = self.dir
+        while abs((self.dir - start_dir) - angle) > 0.1:
             self.send_speed(0.0, aspeed)
             self.rate.sleep()
 
@@ -104,9 +108,10 @@ class Lab2:
         This method is a callback bound to a Subscriber.
         :param msg [PoseStamped] The target pose.
         """
+        # Execute the robot movements to reach the target pose
         self.rotate(math.atan2(msg.pose.position.y - self.py, msg.pose.position.x - self.px) - self.dir, 0.5)
-        self.drive(math.sqrt((msg.pose.position.y - self.py)**2 + (msg.pose.position.x - self.px)**2), 0.05)
-        self.rotate(self.dir - msg.pose.orientation.z, 0.5)
+        self.drive(math.sqrt((msg.pose.position.y - self.py)**2 + (msg.pose.position.x - self.px)**2), 0.2)
+        self.rotate(msg.pose.orientation.z - self.dir, 0.5)
 
 
 
