@@ -8,6 +8,15 @@ from geometry_msgs.msg import Twist
 from tf.transformations import euler_from_quaternion
 
 
+# Helper function to extract the sign of a number
+# Any value below 0 is considered negative
+def sign(value):
+    if value < 0:
+        return -1
+    else:
+        return 1
+
+
 class Lab2:
 
     def __init__(self):
@@ -77,7 +86,7 @@ class Lab2:
         """
         # Wrap the angle to the range [-pi, pi]
         while abs(angle) > math.pi:
-            angle = angle - 2 * math.pi * (angle / abs(angle))
+            angle = angle - 2 * math.pi * sign(angle)
 
         # Invert the move speed if needed
         aspeed = aspeed if angle > 0 else -aspeed
@@ -106,9 +115,7 @@ class Lab2:
 
         # Wrap the angle to the range [-pi, pi]
         while abs(initial_angle) > math.pi:
-            initial_angle = initial_angle - 2 * math.pi * (
-                initial_angle / abs(initial_angle)
-            )
+            initial_angle = initial_angle - 2 * math.pi * sign(initial_angle)
 
         # Attempt to optimize the direction of the robot
         # Instead of turning 180 degrees, we can turn 180 - angle degrees and drive backwards
@@ -122,7 +129,7 @@ class Lab2:
 
         # Execute the robot movements to reach the target pose
         self.rotate(initial_angle, 0.5)
-        self.drive(
+        self.smooth_drive(
             math.sqrt(
                 (msg.pose.position.y - self.py) ** 2
                 + (msg.pose.position.x - self.px) ** 2
@@ -150,9 +157,58 @@ class Lab2:
         :param distance     [float] [m]   The distance to cover.
         :param linear_speed [float] [m/s] The maximum forward linear speed.
         """
-        ### EXTRA CREDIT
-        # TODO
-        pass  # delete this when you implement your code
+        # Note the starting position
+        start_x = self.px
+        start_y = self.py
+
+        # Ignore the sign of the distance
+        distance = abs(distance)
+
+        # Publish the movement to the '/cmd_vel' topic
+        # Adjust the speed smoothly over time
+        # Continuously check if we have covered the distance
+        current_speed = 0.0
+        dist_tol = 0.01  # m
+        while (
+            abs(
+                distance
+                - math.sqrt((self.px - start_x) ** 2 + (self.py - start_y) ** 2)
+            )
+            > dist_tol
+        ):
+
+            # Initial acceleration
+            if abs(current_speed) < abs(linear_speed):
+                # Increase the speed by a constant acceleration
+                # Pull the sign from the linear speed
+                accel = 0.1  # m/s^2
+                current_speed += (
+                    accel * self.rate.sleep_dur.to_sec() * sign(linear_speed)
+                )
+                self.send_speed(current_speed, 0.0)
+                self.rate.sleep()
+
+            else:
+                # Simple P controller to adjust the speed
+                # Note that we have to integrate the sign of linear speed into the controller
+                kP = 0.75
+                remaining_dist = distance - math.sqrt(
+                    (self.px - start_x) ** 2 + (self.py - start_y) ** 2
+                )
+                desired_speed = kP * remaining_dist * sign(linear_speed)
+
+                # Cap the desired speed to the maximum speed
+                # Extract the sign of the desired speed to preserve the direction
+                if abs(desired_speed) > abs(linear_speed):
+                    desired_speed = abs(linear_speed) * sign(desired_speed)
+
+                # Send over the speed
+                # If the desired speed is higher than the maximum speed, send the maximum speed
+                self.send_speed(desired_speed, 0.0)
+                self.rate.sleep()
+
+        # Stop the robot
+        self.send_speed(0.0, 0.0)
 
     def run(self):
         rospy.spin()
