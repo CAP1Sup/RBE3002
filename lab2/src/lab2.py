@@ -7,6 +7,7 @@ from geometry_msgs.msg import Pose, PoseStamped
 from geometry_msgs.msg import Twist
 from tf.transformations import euler_from_quaternion
 
+
 class Lab2:
 
     def __init__(self):
@@ -14,29 +15,26 @@ class Lab2:
         Class constructor
         """
         # Initialize node, name it 'lab2'
-        rospy.init_node('lab2')
+        rospy.init_node("lab2")
 
         # Set the rate
         self.rate = rospy.Rate(10)
 
         # Tell ROS that this node publishes Twist messages on the '/cmd_vel' topic
-        self.speed_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.speed_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
 
         # Tell ROS that this node subscribes to Odometry messages on the '/odom' topic
         # When a message is received, call self.update_odometry
-        rospy.Subscriber('/odom', Odometry, self.update_odometry)
+        rospy.Subscriber("/odom", Odometry, self.update_odometry)
 
         # Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
         # When a message is received, call self.go_to
-        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.go_to)
+        rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.go_to)
 
-        #attributes to keep track of current position
+        # Attributes to keep track of current position
         self.px = 0.0
         self.py = 0.0
         self.dir = 0.0
-
-
-
 
     def send_speed(self, linear_speed: float, angular_speed: float):
         """
@@ -44,15 +42,13 @@ class Lab2:
         :param linear_speed  [float] [m/s]   The forward linear speed.
         :param angular_speed [float] [rad/s] The angular speed for rotating around the body center.
         """
-        ### Make a new Twist message
+        # Make a new Twist message
         twist = Twist()
         twist.linear.x = linear_speed
         twist.angular.z = angular_speed
 
-        ### Publish the message
+        # Publish the message
         self.speed_pub.publish(twist)
-
-
 
     def drive(self, distance: float, linear_speed: float):
         """
@@ -66,14 +62,12 @@ class Lab2:
 
         # Publish the movement to the '/cmd_vel' topic
         # Continuously check if we have covered the distance
-        while (self.px - start_x)**2 + (self.py - start_y)**2 < distance**2:
+        while (self.px - start_x) ** 2 + (self.py - start_y) ** 2 < distance**2:
             self.send_speed(linear_speed, 0.0)
             self.rate.sleep()
 
         # Stop the robot
         self.send_speed(0.0, 0.0)
-
-
 
     def rotate(self, angle: float, aspeed: float):
         """
@@ -88,8 +82,6 @@ class Lab2:
         # Invert the move speed if needed
         aspeed = aspeed if angle > 0 else -aspeed
 
-        rospy.loginfo("Rotating by %f radians at %f rad/s", angle, aspeed)
-
         # Publish the movement to the '/cmd_vel' topic
         # Continuously check if we have covered the angle
         start_dir = self.dir
@@ -100,20 +92,44 @@ class Lab2:
         # Stop the robot
         self.send_speed(0.0, 0.0)
 
-
-
     def go_to(self, msg: PoseStamped):
         """
         Calls rotate(), drive(), and rotate() to attain a given pose.
         This method is a callback bound to a Subscriber.
         :param msg [PoseStamped] The target pose.
         """
+        # Calculate the angle to the target point
+        initial_angle = (
+            math.atan2(msg.pose.position.y - self.py, msg.pose.position.x - self.px)
+            - self.dir
+        )
+
+        # Wrap the angle to the range [-pi, pi]
+        while abs(initial_angle) > math.pi:
+            initial_angle = initial_angle - 2 * math.pi * (
+                initial_angle / abs(initial_angle)
+            )
+
+        # Attempt to optimize the direction of the robot
+        # Instead of turning 180 degrees, we can turn 180 - angle degrees and drive backwards
+        drive_dir = 1
+        if initial_angle > math.pi / 2:
+            initial_angle -= math.pi
+            drive_dir = -1
+        elif initial_angle < -math.pi / 2:
+            initial_angle += math.pi
+            drive_dir = -1
+
         # Execute the robot movements to reach the target pose
-        self.rotate(math.atan2(msg.pose.position.y - self.py, msg.pose.position.x - self.px) - self.dir, 0.5)
-        self.drive(math.sqrt((msg.pose.position.y - self.py)**2 + (msg.pose.position.x - self.px)**2), 0.2)
+        self.rotate(initial_angle, 0.5)
+        self.drive(
+            math.sqrt(
+                (msg.pose.position.y - self.py) ** 2
+                + (msg.pose.position.x - self.px) ** 2
+            ),
+            0.2 * drive_dir,
+        )
         self.rotate(msg.pose.orientation.z - self.dir, 0.5)
-
-
 
     def update_odometry(self, msg: Odometry):
         """
@@ -125,10 +141,8 @@ class Lab2:
         self.py = msg.pose.pose.position.y
         quat_orig = msg.pose.pose.orientation
         quat_list = [quat_orig.x, quat_orig.y, quat_orig.z, quat_orig.w]
-        (roll , pitch , yaw) = euler_from_quaternion(quat_list)
+        (roll, pitch, yaw) = euler_from_quaternion(quat_list)
         self.dir = yaw
-
-
 
     def smooth_drive(self, distance: float, linear_speed: float):
         """
@@ -138,12 +152,11 @@ class Lab2:
         """
         ### EXTRA CREDIT
         # TODO
-        pass # delete this when you implement your code
-
-
+        pass  # delete this when you implement your code
 
     def run(self):
         rospy.spin()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     Lab2().run()
