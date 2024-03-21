@@ -176,9 +176,15 @@ class Lab2:
             )
             > dist_tol
         ):
+            # Calculate the remaining distance
+            remaining_dist = distance - math.sqrt(
+                (self.px - start_x) ** 2 + (self.py - start_y) ** 2
+            )
 
             # Initial acceleration
-            if abs(current_speed) < abs(linear_speed):
+            # Make sure that the robot hasn't made it halfway to the target
+            # Otherwise we could continue accelerating and overshoot the target
+            if abs(current_speed) < abs(linear_speed) and remaining_dist > distance / 2:
                 # Increase the speed by a constant acceleration
                 # Pull the sign from the linear speed
                 accel = 0.1  # m/s^2
@@ -191,10 +197,7 @@ class Lab2:
             else:
                 # Simple P controller to adjust the speed
                 # Note that we have to integrate the sign of linear speed into the controller
-                kP = 0.75
-                remaining_dist = distance - math.sqrt(
-                    (self.px - start_x) ** 2 + (self.py - start_y) ** 2
-                )
+                kP = 0.75  # 1/m
                 desired_speed = kP * remaining_dist * sign(linear_speed)
 
                 # Cap the desired speed to the maximum speed
