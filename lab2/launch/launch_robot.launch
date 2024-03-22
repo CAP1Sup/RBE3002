@@ -1,21 +1,14 @@
 <launch>
-  <!-- Machine defintions -->
-  <machine name="host_pc" address="localhost" ros-root="$(env ROS_ROOT)"
-    ros-package-path="$(env ROS_PACKAGE_PATH)" default="true" />
-  <machine name="tb" user="ubuntu" address="$(env TURTLEBOT3_ADDR)" ros-root="$(env ROS_ROOT)"
-    ros-package-path="$(env ROS_PACKAGE_PATH)" env-loader="/opt/ros/noetic/loader.sh" />
-
-  <!-- Robot -->
-  <include file="$(find turtlebot3_bringup)/launch/turtlebot3_robot.launch" machine="tb" />
-
   <!-- RViz -->
-  <node pkg=" robot_state_publisher" type=" robot_state_publisher" name=" robot_state_publisher"
-    output=" screen">
-    <param name=" publish_frequency" type=" double" value=" 50.0" />
+  <param name="robot_description"
+    command="$(find xacro)/xacro $(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro" />
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"
+    output="screen">
+    <param name="publish_frequency" type="double" value="50.0" />
   </node>
-  <node name=" rviz" pkg=" rviz" type=" rviz"
-    args=" -d $(find turtlebot3_fake)/ rviz/ turtlebot3_fake.rviz" />
+  <node name="rviz" pkg="rviz" type="rviz"
+    args="-d $(find turtlebot3_fake)/rviz/turtlebot3_fake.rviz" />
 
   <!-- Lab 2 -->
-  <node pkg=" lab2" type=" lab2.py" name=" lab2" output=" screen" />
+  <node pkg="lab2" type="lab2.py" name="lab2" output="screen" />
 </launch>
