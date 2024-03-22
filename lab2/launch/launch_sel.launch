@@ -1,0 +1,27 @@
+<launch>
+  <arg name="use_sim" default="false" />
+
+  <!-- Setup the robot information -->
+  <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
+    <arg name="model" value="$(env TURTLEBOT3_MODEL)" />
+  </include>
+
+  <!-- If using the simulator -->
+  <group if="$(arg use_sim)">
+    <!-- Gazebo -->
+    <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_empty_world.launch">
+      <arg name="model" value="burger" />
+    </include>
+  </group>
+
+  <!-- RViz -->
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"
+    output="screen">
+    <param name="publish_frequency" type="double" value="50.0" />
+  </node>
+  <node name="rviz" pkg="rviz" type="rviz"
+    args="-d $(find turtlebot3_fake)/rviz/turtlebot3_fake.rviz" />
+
+  <!-- Lab 2 -->
+  <node pkg="lab2" type="lab2.py" name="lab2" output="screen" />
+</launch>
