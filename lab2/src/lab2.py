@@ -17,6 +17,13 @@ def sign(value):
         return 1
 
 
+# Helper function to wrap an angle to the range [-pi, pi]
+def wrap(angle):
+    while abs(angle) > math.pi:
+        angle = angle - 2 * math.pi * sign(angle)
+    return angle
+
+
 class Lab2:
 
     def __init__(self):
@@ -82,11 +89,10 @@ class Lab2:
         """
         Rotates the robot around the body center by the given angle.
         :param angle         [float] [rad]   The distance to cover.
-        :param angular_speed [float] [rad/s] The angular speed.
+        :param aspeed [float] [rad/s] The angular speed.
         """
         # Wrap the angle to the range [-pi, pi]
-        while abs(angle) > math.pi:
-            angle = angle - 2 * math.pi * sign(angle)
+        angle = wrap(angle)
 
         # Invert the move speed if needed
         aspeed = aspeed if angle > 0 else -aspeed
@@ -94,7 +100,7 @@ class Lab2:
         # Publish the movement to the '/cmd_vel' topic
         # Continuously check if we have covered the angle
         start_dir = self.dir
-        while abs((self.dir - start_dir) - angle) > 0.1:
+        while abs(wrap(self.dir - start_dir) - angle) > 0.1:
             self.send_speed(0.0, aspeed)
             self.rate.sleep()
 
@@ -114,8 +120,7 @@ class Lab2:
         )
 
         # Wrap the angle to the range [-pi, pi]
-        while abs(initial_angle) > math.pi:
-            initial_angle = initial_angle - 2 * math.pi * sign(initial_angle)
+        initial_angle = wrap(initial_angle)
 
         # Attempt to optimize the direction of the robot
         # Instead of turning 180 degrees, we can turn 180 - angle degrees and drive backwards
@@ -136,7 +141,16 @@ class Lab2:
             ),
             0.2 * drive_dir,
         )
-        self.rotate(msg.pose.orientation.z - self.dir, 0.5)
+
+        # Convert the quaternion to Euler angles
+        quat_list = [
+            msg.pose.orientation.x,
+            msg.pose.orientation.y,
+            msg.pose.orientation.z,
+            msg.pose.orientation.w,
+        ]
+        (roll, pitch, target_yaw) = euler_from_quaternion(quat_list)
+        self.rotate(target_yaw - self.dir, 0.5)
 
     def update_odometry(self, msg: Odometry):
         """
