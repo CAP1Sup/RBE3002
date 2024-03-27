@@ -3,8 +3,7 @@
 import rospy
 import math
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Pose, PoseStamped
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped, Twist
 from tf.transformations import euler_from_quaternion
 
 
@@ -125,10 +124,7 @@ class Lab2:
         # Attempt to optimize the direction of the robot
         # Instead of turning 180 degrees, we can turn 180 - angle degrees and drive backwards
         drive_dir = 1
-        if initial_angle > math.pi / 2:
-            initial_angle -= math.pi
-            drive_dir = -1
-        elif initial_angle < -math.pi / 2:
+        if abs(initial_angle) > math.pi / 2:
             initial_angle += math.pi
             drive_dir = -1
 
@@ -162,8 +158,7 @@ class Lab2:
         self.py = msg.pose.pose.position.y
         quat_orig = msg.pose.pose.orientation
         quat_list = [quat_orig.x, quat_orig.y, quat_orig.z, quat_orig.w]
-        (roll, pitch, yaw) = euler_from_quaternion(quat_list)
-        self.dir = yaw
+        (roll, pitch, self.dir) = euler_from_quaternion(quat_list)
 
     def smooth_drive(self, distance: float, linear_speed: float):
         """
