@@ -23,5 +23,5 @@
     args="-d $(find turtlebot3_fake)/rviz/turtlebot3_fake.rviz" />
 
   <!-- Lab 2 -->
-  <node pkg="lab2" type="lab2.py" name="lab2" output="screen" />
+  <node pkg="lab2" type="go_to_pose.py" name="go_to_pose" output="screen" />
 </launch>

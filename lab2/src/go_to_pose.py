@@ -2,6 +2,9 @@
 
 import rospy
 import math
+import argparse
+from lab2.srv import GoToPoseStamped
+from std_msgs.msg import Bool
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, Twist
 from tf.transformations import euler_from_quaternion
@@ -25,7 +28,7 @@ def wrap(angle):
 
 class Lab2:
 
-    def __init__(self):
+    def __init__(self, is_service=False):
         """
         Class constructor
         """
@@ -42,9 +45,15 @@ class Lab2:
         # When a message is received, call self.update_odometry
         rospy.Subscriber("/odom", Odometry, self.update_odometry)
 
-        # Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
-        # When a message is received, call self.go_to
-        rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.go_to)
+        # Decide whether to use the service or the subscriber
+        if is_service:
+            # Tell ROS that this node provides a service on the '/go_to_goal' topic
+            # When a request is received, call self.go_to_service
+            rospy.Service("/go_to_pose_stamped", GoToPoseStamped, self.go_to_service)
+        else:
+            # Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
+            # When a message is received, call self.go_to
+            rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.go_to)
 
         # Attributes to keep track of current position
         self.px = 0.0
@@ -105,6 +114,10 @@ class Lab2:
 
         # Stop the robot
         self.send_speed(0.0, 0.0)
+
+    def go_to_service(self, req: GoToPoseStamped):
+        self.go_to(req.goal)
+        return Bool(data=True)
 
     def go_to(self, msg: PoseStamped):
         """
@@ -227,4 +240,11 @@ class Lab2:
 
 
 if __name__ == "__main__":
-    Lab2().run()
+    parser = argparse.ArgumentParser(description="Lab 2")
+    parser.add_argument(
+        "-s",
+        "--service",
+        action="store_true",
+    )
+    args, unknown = parser.parse_known_args()
+    Lab2(args.service).run()
