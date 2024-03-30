@@ -4,9 +4,7 @@ import rospy
 from lab2.srv import GoToPoseStamped
 from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetPlan
-from geometry_msgs.msg import PoseStamped, Point
-from path_planner import PathPlanner
-import time
+from geometry_msgs.msg import PoseStamped
 
 
 class MoveToPoint:
@@ -60,7 +58,20 @@ class MoveToPoint:
                 goal,
                 0.0,
             ).plan
-            rospy.loginfo(f"Path: {path}")
+
+            # Print the length of the path
+            length = 0
+            for i in range(1, len(path.poses)):
+                length += (
+                    (path.poses[i].pose.position.x - path.poses[i - 1].pose.position.x)
+                    ** 2
+                    + (
+                        path.poses[i].pose.position.y
+                        - path.poses[i - 1].pose.position.y
+                    )
+                    ** 2
+                ) ** 0.5
+            rospy.loginfo(f"Path length: {length:.4f}m")
 
             # Follow the path
             go_to_pose = rospy.ServiceProxy("/go_to_pose_stamped", GoToPoseStamped)
@@ -74,12 +85,6 @@ class MoveToPoint:
             rospy.logerr(f"Service call failed: {e}")
 
     def run(self):
-        start = (16, 16)
-        end = (27, 15)
-        map = PathPlanner.request_map()
-        start_time = time.time()
-        rospy.loginfo(f"Calculated path: {PathPlanner.a_star(map, start, end)}")
-        rospy.loginfo(f"Time taken: {time.time() - start_time:.4f}s")
         rospy.spin()
 
 
