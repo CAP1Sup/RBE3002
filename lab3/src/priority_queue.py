@@ -1,5 +1,6 @@
 import heapq
 
+
 class PriorityQueue:
 
     def __init__(self):
@@ -22,8 +23,8 @@ class PriorityQueue:
         """
         for i in range(0, len(self.elements)):
             it = self.elements[i]
-            if (it[1] == element):
-                if (it[0] > priority):
+            if it[1] == element:
+                if it[0] > priority:
                     self.elements[i] = (priority, element)
                     heapq.heapify(self.elements)
                 return
@@ -34,9 +35,9 @@ class PriorityQueue:
         Returns the element with the top priority.
         """
         return heapq.heappop(self.elements)[1]
-    
+
     def get_queue(self):
         """
         Returns the content of the queue as a list.
-	"""
+        """
         return self.elements

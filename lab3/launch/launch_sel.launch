@@ -1,0 +1,41 @@
+<launch>
+  <arg name="use_sim" default="false" />
+
+  <!-- Setup the robot information -->
+  <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
+    <arg name="model" value="$(env TURTLEBOT3_MODEL)" />
+  </include>
+
+  <!-- Map server -->
+  <node name="map_server" pkg="map_server" type="map_server"
+    args="$(find lab3)/maps/simple_map.yaml" />
+
+  <!-- TF static transforms -->
+  <node name="tf_transforms" pkg="tf" type="static_transform_publisher"
+    args="0 0 0 0 0 0 /map /odom 100" />
+
+  <!-- If using the simulator -->
+  <group if="$(arg use_sim)">
+    <!-- Gazebo -->
+    <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_empty_world.launch">
+      <arg name="model" value="burger" />
+    </include>
+  </group>
+
+  <!-- RViz -->
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"
+    output="screen">
+    <param name="publish_frequency" type="double" value="50.0" />
+  </node>
+  <node name="rviz" pkg="rviz" type="rviz"
+    args="-d $(find lab3)/rviz/rbe3002_lab3.rviz" />
+
+  <!-- Lab 3 Path Planner Service -->
+  <node pkg="lab3" type="path_planner.py" name="lab3PP" output="screen" />
+
+  <!-- Lab 3 Move To Point -->
+  <node pkg="lab3" type="move_to_point.py" name="lab3M2P" output="screen" />
+
+  <!-- Lab 2 Robot Controller -->
+  <node pkg="lab2" type="go_to_pose.py" name="go_to_pose" output="screen" args="-s" />
+</launch>
