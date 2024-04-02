@@ -431,19 +431,22 @@ class PathPlanner:
         :param point2 [(int,int)] The second point.
         :return  [bool]       True if the path is clear, False otherwise.
         """
+        # If the X or Y coordinates are the same, the path is clear
+        if point1[0] == point2[0] or point1[1] == point2[1]:
+            return True
+
         # Convert the grid coordinates to world coordinates
         p1 = PathPlanner.grid_to_world(mapdata, point1)
         p2 = PathPlanner.grid_to_world(mapdata, point2)
 
         # Calculate the world distance between the two points
-        distance = math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2)
-
-        # If the distance is 2 cells or less, the path is clear
-        if distance <= 2 * mapdata.info.resolution:
-            return True
+        distance = (
+            math.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
+            * mapdata.info.resolution
+        )
 
         # Calculate the angle between the two points
-        angle = math.atan2(p2.y - p1.y, p2.x - p1.x)
+        angle = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
 
         # If the angle is a multiple of 90 degrees, the path is clear
         if (
@@ -482,7 +485,7 @@ class PathPlanner:
         path.poses = PathPlanner.path_to_poses(mapdata, point_path)
         return path
 
-    def plan_path(self, msg):
+    def plan_path(self, msg: GetPlan, visualize=True) -> Path:
         """
         Plans a path between the start and goal locations in the requested.
         Internally uses A* to plan the optimal path.
@@ -500,16 +503,19 @@ class PathPlanner:
         # Execute A*
         start = PathPlanner.world_to_grid(cspacedata, msg.start.pose.position)
         goal = PathPlanner.world_to_grid(cspacedata, msg.goal.pose.position)
-        path = self.a_star(cspacedata, start, goal, visualize=True)
+        path = self.a_star(cspacedata, start, goal, visualize)
 
         # Optimize waypoints
         waypoints = PathPlanner.optimize_path(cspacedata, path)
 
-        # Publish the path
-        self.path_pub.publish(self.path_to_message(mapdata, waypoints))
+        # Generate a Path message from the found path
+        path_msg = self.path_to_message(cspacedata, waypoints)
 
-        # Return a Path message
-        return self.path_to_message(mapdata, waypoints)
+        # Publish the path
+        self.path_pub.publish(path_msg)
+
+        # Return the Path message
+        return path_msg
 
     def run(self):
         """
