@@ -2,6 +2,7 @@
 
 import rospy
 import math
+import numpy as np
 import argparse
 from lab2.srv import GoToPoseStamped
 from std_msgs.msg import Bool
@@ -144,10 +145,8 @@ class Lab2:
         # Execute the robot movements to reach the target pose
         self.rotate(initial_angle, 0.5)
         self.smooth_drive(
-            math.sqrt(
-                (msg.pose.position.y - self.py) ** 2
-                + (msg.pose.position.x - self.px) ** 2
-            ),
+            msg.pose.position.x,
+            msg.pose.position.y,
             0.2 * drive_dir,
         )
 
@@ -173,18 +172,19 @@ class Lab2:
         quat_list = [quat_orig.x, quat_orig.y, quat_orig.z, quat_orig.w]
         (roll, pitch, self.dir) = euler_from_quaternion(quat_list)
 
-    def smooth_drive(self, distance: float, linear_speed: float):
+    def smooth_drive(self, goal_x: float, goal_y: float, linear_speed: float):
         """
         Drives the robot in a straight line by changing the actual speed smoothly.
-        :param distance     [float] [m]   The distance to cover.
+        :param goal_x       [float] [m]   The target x-coordinate.
+        :param goal_y       [float] [m]   The target y-coordinate.
         :param linear_speed [float] [m/s] The maximum forward linear speed.
         """
         # Note the starting position
         start_x = self.px
         start_y = self.py
 
-        # Ignore the sign of the distance
-        distance = abs(distance)
+        # Calculate the distance
+        distance = math.sqrt((goal_x - start_x) ** 2 + (goal_y - start_y) ** 2)
 
         # Publish the movement to the '/cmd_vel' topic
         # Adjust the speed smoothly over time
@@ -203,6 +203,27 @@ class Lab2:
                 (self.px - start_x) ** 2 + (self.py - start_y) ** 2
             )
 
+            # Forward project the robot's position
+            # By making this point follow the line between the start and goal points,
+            # the robot will follow the line like a trailer follows a truck
+            # The larger the projection distance, the smoother the movement, but the slower the correction
+            proj_dist = 0.1 * sign(linear_speed)  # m
+            forward_x = self.px + proj_dist * math.cos(self.dir)
+            forward_y = self.py + proj_dist * math.sin(self.dir)
+            forward_pt = np.array([forward_x, forward_y])
+
+            # Find the distance from the forward point to the line
+            # This distance is the error that we want to correct
+            start_pt = np.array([start_x, start_y])
+            goal_pt = np.array([goal_x, goal_y])
+            heading_error = np.cross(
+                goal_pt - start_pt, forward_pt - start_pt
+            ) / np.linalg.norm(goal_pt - start_pt)
+
+            # Calculate the heading correction by scaling the error
+            headingP = -2.5 * math.pi  # rad/s/m
+            heading_correction = headingP * heading_error
+
             # Initial acceleration
             # Make sure that the robot hasn't made it halfway to the target
             # Otherwise we could continue accelerating and overshoot the target
@@ -213,7 +234,7 @@ class Lab2:
                 current_speed += (
                     accel * self.rate.sleep_dur.to_sec() * sign(linear_speed)
                 )
-                self.send_speed(current_speed, 0.0)
+                self.send_speed(current_speed, heading_correction)
                 self.rate.sleep()
 
             else:
@@ -229,7 +250,7 @@ class Lab2:
 
                 # Send over the speed
                 # If the desired speed is higher than the maximum speed, send the maximum speed
-                self.send_speed(desired_speed, 0.0)
+                self.send_speed(desired_speed, heading_correction)
                 self.rate.sleep()
 
         # Stop the robot
