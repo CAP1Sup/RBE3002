@@ -314,8 +314,16 @@ class PathPlanner:
         cost_so_far = {start: 0}
         came_from = {start: None}
 
+        # If we're providing visuals, initialize the GridCells messages
+        if visualize:
+            expanded_cells = GridCells()
+            expanded_cells.header.frame_id = mapdata.header.frame_id
+            expanded_cells.cell_width = mapdata.info.resolution
+            expanded_cells.cell_height = mapdata.info.resolution
+
         # Process the frontier until the goal is reached
-        while not frontier.empty():
+        path_found = False
+        while not frontier.empty() and not path_found:
             # Get the current node
             current = frontier.get()
 
@@ -324,29 +332,27 @@ class PathPlanner:
                 rospy.loginfo(
                     "Goal reached in %.6f seconds" % (time.time() - start_time)
                 )
-                return PathPlanner.reconstruct_path(came_from, start, goal)
+                path_found = True
+                path = PathPlanner.reconstruct_path(came_from, start, goal)
 
             # Loop through the neighbors of the current node
-            neighbors = PathPlanner.neighbors_of_4(mapdata, current)
-            for neighbor in neighbors:
-                # Calculate the cost to move to the neighbor
-                new_cost = cost_so_far[current] + 1
+            else:
+                neighbors = PathPlanner.neighbors_of_4(mapdata, current)
+                for neighbor in neighbors:
+                    # Calculate the cost to move to the neighbor
+                    new_cost = cost_so_far[current] + 1
 
-                # Check if the neighbor is not in the cost map or the new cost is lower
-                if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                    # Update the cost and the parent of the neighbor
-                    cost_so_far[neighbor] = new_cost
-                    priority = new_cost + PathPlanner.manhattan_dist(neighbor, goal)
-                    frontier.put(neighbor, priority)
-                    came_from[neighbor] = current
+                    # Check if the neighbor is not in the cost map or the new cost is lower
+                    if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                        # Update the cost and the parent of the neighbor
+                        cost_so_far[neighbor] = new_cost
+                        priority = new_cost + PathPlanner.manhattan_dist(neighbor, goal)
+                        frontier.put(neighbor, priority)
+                        came_from[neighbor] = current
 
             # Visualize the frontier and the expanded cells
             if visualize:
                 # Publish the expanded cells
-                expanded_cells = GridCells()
-                expanded_cells.header.frame_id = mapdata.header.frame_id
-                expanded_cells.cell_width = mapdata.info.resolution
-                expanded_cells.cell_height = mapdata.info.resolution
                 expanded_cells.cells = [
                     PathPlanner.grid_to_world(mapdata, node)
                     for node in cost_so_far.keys()
@@ -361,14 +367,16 @@ class PathPlanner:
                 ]
                 self.frontier_pub.publish(expanded_cells)
 
-        # If the frontier is empty, the goal is unreachable
-        rospy.logwarn("Goal is unreachable")
+        # Return the found path or an empty list
+        if path_found:
+            return path
+        else:
+            # The frontier is empty, the goal is unreachable
+            rospy.logwarn("Goal is unreachable")
 
-        # Time taken
-        rospy.loginfo(f"Time taken: {time.time() - start_time}")
-
-        # Return an empty path
-        return []
+            # Time taken
+            rospy.loginfo(f"Time taken: {time.time() - start_time}")
+            return []
 
     @staticmethod
     def reconstruct_path(
