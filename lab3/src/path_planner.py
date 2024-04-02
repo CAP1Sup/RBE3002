@@ -60,18 +60,15 @@ class PathPlanner:
         return p[0] + p[1] * mapdata.info.width
 
     @staticmethod
-    def simple_dist(p1: tuple[float, float], p2: tuple[float, float]) -> float:
+    def manhattan_dist(p1: tuple[float, float], p2: tuple[float, float]) -> float:
         """
-        Calculates the sum of squares of distances between two points.
+        Calculates the Manhattan distance between two points.
         :param p1 [(float, float)] first point.
         :param p2 [(float, float)] second point.
         :return   [float]          heuristic distance.
         """
-        # Use a simpler version of the Euclidean distance formula
-        # This is much faster and more than enough for path planning
-        # The square root is not necessary
-        # Improved performance by ~30% compared to math.sqrt(...)
-        return (p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2
+        # Much faster than Euclidean distance
+        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
     @staticmethod
     def grid_to_world(mapdata: OccupancyGrid, p: tuple[int, int]) -> Point:
@@ -338,7 +335,7 @@ class PathPlanner:
                 if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
                     # Update the cost and the parent of the neighbor
                     cost_so_far[neighbor] = new_cost
-                    priority = new_cost + PathPlanner.simple_dist(neighbor, goal)
+                    priority = new_cost + PathPlanner.manhattan_dist(neighbor, goal)
                     frontier.put(neighbor, priority)
                     came_from[neighbor] = current
 
