@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import math
 import rospy
+import numpy as np
 from nav_msgs.srv import GetPlan, GetMap
 from nav_msgs.msg import GridCells, OccupancyGrid, Path
 from geometry_msgs.msg import Point, Pose, PoseStamped
@@ -445,9 +446,9 @@ class PathPlanner:
 
         # Check if all cells touched by the path are clear
         search_precision = 0.1
-        for i in range(int(distance / search_precision)):
-            x = p1.x + i * math.cos(angle) * search_precision
-            y = p1.y + i * math.sin(angle) * search_precision
+        for dist in np.arange(0, distance, search_precision):
+            x = p1.x + dist * math.cos(angle)
+            y = p1.y + dist * math.sin(angle)
             grid_point = PathPlanner.world_to_grid(mapdata, Point(x, y, 0))
             if not PathPlanner.is_cell_walkable(mapdata, grid_point):
                 return False
