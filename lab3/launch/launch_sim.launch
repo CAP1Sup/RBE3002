@@ -1,5 +1,4 @@
 <launch>
-  <arg name="use_sim" default="false" />
 
   <!-- Setup the robot information -->
   <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
@@ -14,13 +13,10 @@
   <node name="tf_transforms" pkg="tf" type="static_transform_publisher"
     args="0 0 0 0 0 0 /map /odom 100" />
 
-  <!-- If using the simulator -->
-  <group if="$(arg use_sim)">
-    <!-- Gazebo -->
-    <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_empty_world.launch">
-      <arg name="model" value="burger" />
-    </include>
-  </group>
+  <!-- Gazebo -->
+  <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_empty_world.launch">
+    <arg name="model" value="burger" />
+  </include>
 
   <!-- RViz -->
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"

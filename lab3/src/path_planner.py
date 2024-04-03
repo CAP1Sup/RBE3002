@@ -231,12 +231,15 @@ class PathPlanner:
             rospy.logerr("Service call failed: %s" % e)
             return None
 
-    def calc_cspace(self, mapdata: OccupancyGrid, padding: int) -> OccupancyGrid:
+    def calc_cspace(
+        self, mapdata: OccupancyGrid, padding: int, visualize: bool = True
+    ) -> OccupancyGrid:
         """
         Calculates the C-Space, i.e., makes the obstacles in the map thicker.
         Publishes the list of cells that were added to the original map.
         :param mapdata [OccupancyGrid] The map data.
         :param padding [int]           The number of cells around the obstacles.
+        :param visualize [bool]        Whether to visualize the C-space.
         :return        [OccupancyGrid] The C-Space.
         """
         rospy.loginfo("Calculating C-Space")
@@ -269,24 +272,28 @@ class PathPlanner:
                                     PathPlanner.grid_to_index(mapdata, (x + i, y + j))
                                 ] = 100
 
-        # Create a GridCells message to publish the C-space
-        cspace_grid = GridCells()
+        # If we're providing visuals, publish the C-space
+        if visualize:
+            # Create a GridCells message
+            cspace_grid = GridCells()
 
-        # Copy the data from the cspace map
-        cspace_grid.header.frame_id = cspace.header.frame_id
-        cspace_grid.cell_width = cspace.info.resolution
-        cspace_grid.cell_height = cspace.info.resolution
+            # Copy the data from the cspace map
+            cspace_grid.header.frame_id = cspace.header.frame_id
+            cspace_grid.cell_width = cspace.info.resolution
+            cspace_grid.cell_height = cspace.info.resolution
 
-        # Populate the GridCells message with the C-space data
-        for x in range(cspace.info.width):
-            for y in range(cspace.info.height):
-                # Check if the cell is occupied
-                index = PathPlanner.grid_to_index(cspace, (x, y))
-                if cspace.data[index] != 0:
-                    cspace_grid.cells.append(PathPlanner.grid_to_world(cspace, (x, y)))
+            # Populate the GridCells message with the C-space data
+            for x in range(cspace.info.width):
+                for y in range(cspace.info.height):
+                    # Check if the cell is occupied
+                    index = PathPlanner.grid_to_index(cspace, (x, y))
+                    if cspace.data[index] != 0:
+                        cspace_grid.cells.append(
+                            PathPlanner.grid_to_world(cspace, (x, y))
+                        )
 
-        # Publish GridCells message
-        self.cspace_pub.publish(cspace_grid)
+            # Publish GridCells message
+            self.cspace_pub.publish(cspace_grid)
 
         # Return the C-space
         return cspace
@@ -298,6 +305,15 @@ class PathPlanner:
         goal: tuple[int, int],
         visualize: bool = False,
     ) -> list[tuple[int, int]]:
+        """
+        Executes the A* algorithm to find the optimal path from the start to the goal.
+        :param mapdata [OccupancyGrid] The map data.
+        :param start [(int, int)] The starting point coordinates.
+        :param goal [(int, int)] The goal point coordinates.
+        :param visualize [bool] Whether to visualize the path planning process.
+        :return [list[(int, int)]] The optimal path as a list of coordinates.
+        """
+
         rospy.loginfo(
             "Executing A* from (%d,%d) to (%d,%d)"
             % (start[0], start[1], goal[0], goal[1])
@@ -485,11 +501,12 @@ class PathPlanner:
         path.poses = PathPlanner.path_to_poses(mapdata, point_path)
         return path
 
-    def plan_path(self, msg: GetPlan, visualize=True) -> Path:
+    def plan_path(self, msg: GetPlan, visualize: bool = True) -> Path:
         """
         Plans a path between the start and goal locations in the requested.
         Internally uses A* to plan the optimal path.
         :param msg [GetPlan] The path planning request.
+        :param visualize [bool] Whether to visualize the path planning process.
         """
         # Request the map
         # In case of error, return an empty path
@@ -498,7 +515,7 @@ class PathPlanner:
             return Path()
 
         # Calculate the C-space and publish it
-        cspacedata = self.calc_cspace(mapdata, 1)
+        cspacedata = self.calc_cspace(mapdata, 1, visualize)
 
         # Execute A*
         start = PathPlanner.world_to_grid(cspacedata, msg.start.pose.position)
