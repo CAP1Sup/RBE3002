@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import rospy
+import math
 from lab2.srv import GoToPoseStamped
 from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetPlan
@@ -62,15 +63,13 @@ class MoveToPoint:
             # Print the length of the path
             length = 0
             for i in range(1, len(path.poses)):
-                length += (
-                    (path.poses[i].pose.position.x - path.poses[i - 1].pose.position.x)
-                    ** 2
-                    + (
-                        path.poses[i].pose.position.y
-                        - path.poses[i - 1].pose.position.y
-                    )
-                    ** 2
-                ) ** 0.5
+                length += math.dist(
+                    [path.poses[i].pose.position.x, path.poses[i].pose.position.y],
+                    [
+                        path.poses[i - 1].pose.position.x,
+                        path.poses[i - 1].pose.position.y,
+                    ],
+                )
             rospy.loginfo(f"Path length: {length:.4f}m")
 
             # Follow the path
