@@ -117,14 +117,18 @@ class Lab2:
         self.send_speed(0.0, 0.0)
 
     def go_to_service(self, req: GoToPoseStamped):
-        self.go_to(req.goal)
+        self.go_to(req.goal, req.linear_speed.data, req.angular_speed.data)
         return Bool(data=True)
 
-    def go_to(self, msg: PoseStamped):
+    def go_to(
+        self, msg: PoseStamped, linear_speed: float = 0.2, angular_speed: float = 0.5
+    ):
         """
         Calls rotate(), drive(), and rotate() to attain a given pose.
         This method is a callback bound to a Subscriber.
         :param msg [PoseStamped] The target pose.
+        :param linear_speed [float] [m/s] The maximum forward linear speed. Should be positive.
+        :param angular_speed [float] [rad/s] The maximum angular speed. Should be positive.
         """
         # Calculate the angle to the target point
         initial_angle = (
@@ -143,11 +147,11 @@ class Lab2:
             drive_dir = -1
 
         # Execute the robot movements to reach the target pose
-        self.rotate(initial_angle, 0.5)
+        self.rotate(initial_angle, angular_speed)
         self.smooth_drive(
             msg.pose.position.x,
             msg.pose.position.y,
-            0.2 * drive_dir,
+            linear_speed * drive_dir,
         )
 
         # Convert the quaternion to Euler angles
@@ -158,7 +162,7 @@ class Lab2:
             msg.pose.orientation.w,
         ]
         (roll, pitch, target_yaw) = euler_from_quaternion(quat_list)
-        self.rotate(target_yaw - self.dir, 0.5)
+        self.rotate(target_yaw - self.dir, angular_speed)
 
     def update_odometry(self, msg: Odometry):
         """

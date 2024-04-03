@@ -1,3 +1,5 @@
 geometry_msgs/PoseStamped goal
+std_msgs/Float32 linear_speed
+std_msgs/Float32 angular_speed
 ---
 std_msgs/Bool success
