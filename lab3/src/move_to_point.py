@@ -3,6 +3,7 @@
 import rospy
 import math
 from lab2.srv import GoToPoseStamped
+from std_msgs.msg import Float32
 from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetPlan
 from geometry_msgs.msg import PoseStamped
@@ -79,7 +80,7 @@ class MoveToPoint:
                     f"Moving to {pose.pose.position.x}, {pose.pose.position.y}"
                 )
                 # Move the robot to the next point
-                go_to_pose(pose)
+                go_to_pose(pose, Float32(data=0.2), Float32(data=0.5))
         except rospy.ServiceException as e:
             rospy.logerr(f"Service call failed: {e}")
 
