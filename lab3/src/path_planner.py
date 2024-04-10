@@ -10,7 +10,7 @@ import numpy as np
 from nav_msgs.srv import GetPlan, GetMap
 from nav_msgs.msg import GridCells, OccupancyGrid, Path
 from geometry_msgs.msg import Point, Pose, PoseStamped
-from tf.transformations import euler_from_quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from priority_queue import PriorityQueue
 import time
 
@@ -142,11 +142,36 @@ class PathPlanner:
         :param  path   [[(int,int)]]   The path as a list of tuples (cell coordinates).
         :return        [[PoseStamped]] The path as a list of PoseStamped (world coordinates).
         """
+        # Loop through the path, appending the poses to the list
         poses = []
-        for point in path:
+        for i in range(len(path)):
+            # Create a new pose and set the frame id to the same as the map
             pose = PoseStamped()
             pose.header.frame_id = mapdata.header.frame_id
-            pose.pose = Pose(position=PathPlanner.grid_to_world(mapdata, point))
+
+            # Calculate the world coordinates of the cell
+            pose.pose.position = PathPlanner.grid_to_world(mapdata, path[i])
+
+            # Check if there is a next cell in the path
+            if i > 0:
+                # We should face towards the previous cell in the path
+                orientation = math.atan2(
+                    path[i][1] - path[i - 1][1], path[i][0] - path[i - 1][0]
+                )
+            else:
+                # If we're at the start, we should face towards the next cell
+                orientation = math.atan2(
+                    path[i + 1][1] - path[i][1], path[i + 1][0] - path[i][0]
+                )
+
+            # Convert the orientation to a quaternion
+            quaternion = quaternion_from_euler(0, 0, orientation)
+            pose.pose.orientation.x = quaternion[0]
+            pose.pose.orientation.y = quaternion[1]
+            pose.pose.orientation.z = quaternion[2]
+            pose.pose.orientation.w = quaternion[3]
+
+            # Pose is ready, append it to the list
             poses.append(pose)
         return poses
 
