@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import math
 import rospy
+import cv2
 import numpy as np
 from nav_msgs.srv import GetPlan, GetMap
 from nav_msgs.msg import GridCells, OccupancyGrid, Path
@@ -244,33 +245,27 @@ class PathPlanner:
         """
         rospy.loginfo("Calculating C-Space")
 
-        # Change the data of the map to a list
-        # This is necessary because the data is originally a tuple and tuples are immutable
-        mapdata.data = list(mapdata.data)
-
         # Copy the original so we can modify the C-space without affecting the original map
         cspace = copy.deepcopy(mapdata)
 
-        # Go through each cell in the occupancy grid
-        for x in range(mapdata.info.width):
-            for y in range(mapdata.info.height):
-                # Check if the cell is occupied
-                index = PathPlanner.grid_to_index(mapdata, (x, y))
-                if mapdata.data[index] != 0:
-                    # Inflate the obstacles
-                    for i in range(-padding, padding + 1):
-                        for j in range(-padding, padding + 1):
-                            # Check if the cell is within the boundaries of the grid
-                            if (
-                                x + i >= 0
-                                and x + i < mapdata.info.width
-                                and y + j >= 0
-                                and y + j < mapdata.info.height
-                            ):
-                                # Mark the cell as occupied
-                                cspace.data[
-                                    PathPlanner.grid_to_index(mapdata, (x + i, y + j))
-                                ] = 100
+        # Convert the data to a numpy array
+        mapdata_np = np.array(mapdata.data).reshape(
+            mapdata.info.height, mapdata.info.width
+        )
+
+        # Convert the numpy array to uint8
+        mapdata_np = mapdata_np.astype(np.uint8)
+
+        # Create a element for the dilation
+        element = cv2.getStructuringElement(
+            cv2.MORPH_RECT, (2 * padding + 1, 2 * padding + 1)
+        )
+
+        # Dilate the obstacles
+        cspace_np = cv2.dilate(mapdata_np, element, iterations=1)
+
+        # Convert the numpy array back to a list
+        cspace.data = cspace_np.flatten().tolist()
 
         # If we're providing visuals, publish the C-space
         if visualize:
