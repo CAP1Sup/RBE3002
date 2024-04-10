@@ -2,6 +2,10 @@
 
 import rospy
 import math
+import numpy as np
+import argparse
+from lab2.srv import GoToPoseStamped
+from std_msgs.msg import Bool
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, Twist
 from tf.transformations import euler_from_quaternion
@@ -25,7 +29,7 @@ def wrap(angle):
 
 class Lab2:
 
-    def __init__(self):
+    def __init__(self, is_service=False):
         """
         Class constructor
         """
@@ -42,9 +46,15 @@ class Lab2:
         # When a message is received, call self.update_odometry
         rospy.Subscriber("/odom", Odometry, self.update_odometry)
 
-        # Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
-        # When a message is received, call self.go_to
-        rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.go_to)
+        # Decide whether to use the service or the subscriber
+        if is_service:
+            # Tell ROS that this node provides a service on the '/go_to_goal' topic
+            # When a request is received, call self.go_to_service
+            rospy.Service("/go_to_pose_stamped", GoToPoseStamped, self.go_to_service)
+        else:
+            # Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
+            # When a message is received, call self.go_to
+            rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.go_to)
 
         # Attributes to keep track of current position
         self.px = 0.0
@@ -106,11 +116,19 @@ class Lab2:
         # Stop the robot
         self.send_speed(0.0, 0.0)
 
-    def go_to(self, msg: PoseStamped):
+    def go_to_service(self, req: GoToPoseStamped):
+        self.go_to(req.goal, req.linear_speed.data, req.angular_speed.data)
+        return Bool(data=True)
+
+    def go_to(
+        self, msg: PoseStamped, linear_speed: float = 0.2, angular_speed: float = 0.5
+    ):
         """
         Calls rotate(), drive(), and rotate() to attain a given pose.
         This method is a callback bound to a Subscriber.
         :param msg [PoseStamped] The target pose.
+        :param linear_speed [float] [m/s] The maximum forward linear speed. Should be positive.
+        :param angular_speed [float] [rad/s] The maximum angular speed. Should be positive.
         """
         # Calculate the angle to the target point
         initial_angle = (
@@ -129,13 +147,11 @@ class Lab2:
             drive_dir = -1
 
         # Execute the robot movements to reach the target pose
-        self.rotate(initial_angle, 0.5)
+        self.rotate(initial_angle, angular_speed)
         self.smooth_drive(
-            math.sqrt(
-                (msg.pose.position.y - self.py) ** 2
-                + (msg.pose.position.x - self.px) ** 2
-            ),
-            0.2 * drive_dir,
+            msg.pose.position.x,
+            msg.pose.position.y,
+            linear_speed * drive_dir,
         )
 
         # Convert the quaternion to Euler angles
@@ -146,7 +162,7 @@ class Lab2:
             msg.pose.orientation.w,
         ]
         (roll, pitch, target_yaw) = euler_from_quaternion(quat_list)
-        self.rotate(target_yaw - self.dir, 0.5)
+        self.rotate(target_yaw - self.dir, angular_speed)
 
     def update_odometry(self, msg: Odometry):
         """
@@ -160,18 +176,19 @@ class Lab2:
         quat_list = [quat_orig.x, quat_orig.y, quat_orig.z, quat_orig.w]
         (roll, pitch, self.dir) = euler_from_quaternion(quat_list)
 
-    def smooth_drive(self, distance: float, linear_speed: float):
+    def smooth_drive(self, goal_x: float, goal_y: float, linear_speed: float):
         """
         Drives the robot in a straight line by changing the actual speed smoothly.
-        :param distance     [float] [m]   The distance to cover.
+        :param goal_x       [float] [m]   The target x-coordinate.
+        :param goal_y       [float] [m]   The target y-coordinate.
         :param linear_speed [float] [m/s] The maximum forward linear speed.
         """
         # Note the starting position
         start_x = self.px
         start_y = self.py
 
-        # Ignore the sign of the distance
-        distance = abs(distance)
+        # Calculate the distance
+        distance = math.sqrt((goal_x - start_x) ** 2 + (goal_y - start_y) ** 2)
 
         # Publish the movement to the '/cmd_vel' topic
         # Adjust the speed smoothly over time
@@ -190,6 +207,27 @@ class Lab2:
                 (self.px - start_x) ** 2 + (self.py - start_y) ** 2
             )
 
+            # Forward project the robot's position
+            # By making this point follow the line between the start and goal points,
+            # the robot will follow the line like a trailer follows a truck
+            # The larger the projection distance, the smoother the movement, but the slower the correction
+            proj_dist = 0.1 * sign(linear_speed)  # m
+            forward_x = self.px + proj_dist * math.cos(self.dir)
+            forward_y = self.py + proj_dist * math.sin(self.dir)
+            forward_pt = np.array([forward_x, forward_y])
+
+            # Find the distance from the forward point to the line
+            # This distance is the error that we want to correct
+            start_pt = np.array([start_x, start_y])
+            goal_pt = np.array([goal_x, goal_y])
+            heading_error = np.cross(
+                goal_pt - start_pt, forward_pt - start_pt
+            ) / np.linalg.norm(goal_pt - start_pt)
+
+            # Calculate the heading correction by scaling the error
+            headingP = -2.5 * math.pi  # rad/s/m
+            heading_correction = headingP * heading_error
+
             # Initial acceleration
             # Make sure that the robot hasn't made it halfway to the target
             # Otherwise we could continue accelerating and overshoot the target
@@ -200,7 +238,7 @@ class Lab2:
                 current_speed += (
                     accel * self.rate.sleep_dur.to_sec() * sign(linear_speed)
                 )
-                self.send_speed(current_speed, 0.0)
+                self.send_speed(current_speed, heading_correction)
                 self.rate.sleep()
 
             else:
@@ -216,7 +254,7 @@ class Lab2:
 
                 # Send over the speed
                 # If the desired speed is higher than the maximum speed, send the maximum speed
-                self.send_speed(desired_speed, 0.0)
+                self.send_speed(desired_speed, heading_correction)
                 self.rate.sleep()
 
         # Stop the robot
@@ -227,4 +265,11 @@ class Lab2:
 
 
 if __name__ == "__main__":
-    Lab2().run()
+    parser = argparse.ArgumentParser(description="Lab 2")
+    parser.add_argument(
+        "-s",
+        "--service",
+        action="store_true",
+    )
+    args, unknown = parser.parse_known_args()
+    Lab2(args.service).run()
