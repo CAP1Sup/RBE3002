@@ -193,7 +193,7 @@ class PathPlanner:
 
         # Check if the cell is free
         index = PathPlanner.grid_to_index(mapdata, p)
-        return mapdata.data[index] == 0
+        return mapdata.data[index] <= 25 and not mapdata.data[index] == -1
 
     @staticmethod
     def neighbors_of_4(
@@ -278,6 +278,9 @@ class PathPlanner:
             mapdata.info.height, mapdata.info.width
         )
 
+        # Any cell with a -1 is considered unknown, so we set it to 0
+        mapdata_np[mapdata_np == -1] = 0
+
         # Convert the numpy array to uint8
         mapdata_np = mapdata_np.astype(np.uint8)
 
@@ -307,7 +310,7 @@ class PathPlanner:
                 for y in range(cspace.info.height):
                     # Check if the cell is occupied
                     index = PathPlanner.grid_to_index(cspace, (x, y))
-                    if cspace.data[index] != 0:
+                    if cspace.data[index] >= 25:
                         cspace_grid.cells.append(
                             PathPlanner.grid_to_world(cspace, (x, y))
                         )
@@ -473,7 +476,6 @@ class PathPlanner:
 
         # Convert the grid coordinates to world coordinates
         p1 = PathPlanner.grid_to_world(mapdata, point1)
-        p2 = PathPlanner.grid_to_world(mapdata, point2)
 
         # Calculate the world distance between the two points
         distance = (
