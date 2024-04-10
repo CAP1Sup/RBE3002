@@ -27,7 +27,7 @@ def wrap(angle):
     return angle
 
 
-class Lab2:
+class GoToPose:
 
     def __init__(self, is_service=False):
         """
@@ -117,11 +117,11 @@ class Lab2:
         self.send_speed(0.0, 0.0)
 
     def go_to_service(self, req: GoToPoseStamped):
-        self.go_to(req.goal, req.linear_speed.data, req.angular_speed.data)
-        return Bool(data=True)
+        result = self.go_to(req.goal, req.linear_speed.data, req.angular_speed.data)
+        return Bool(data=result)
 
     def go_to(
-        self, msg: PoseStamped, linear_speed: float = 0.2, angular_speed: float = 0.5
+        self, goal: PoseStamped, linear_speed: float = 0.2, angular_speed: float = 0.5
     ):
         """
         Calls rotate(), drive(), and rotate() to attain a given pose.
@@ -132,7 +132,7 @@ class Lab2:
         """
         # Calculate the angle to the target point
         initial_angle = (
-            math.atan2(msg.pose.position.y - self.py, msg.pose.position.x - self.px)
+            math.atan2(goal.pose.position.y - self.py, goal.pose.position.x - self.px)
             - self.dir
         )
 
@@ -149,20 +149,31 @@ class Lab2:
         # Execute the robot movements to reach the target pose
         self.rotate(initial_angle, angular_speed)
         self.smooth_drive(
-            msg.pose.position.x,
-            msg.pose.position.y,
+            goal.pose.position.x,
+            goal.pose.position.y,
             linear_speed * drive_dir,
         )
 
         # Convert the quaternion to Euler angles
         quat_list = [
-            msg.pose.orientation.x,
-            msg.pose.orientation.y,
-            msg.pose.orientation.z,
-            msg.pose.orientation.w,
+            goal.pose.orientation.x,
+            goal.pose.orientation.y,
+            goal.pose.orientation.z,
+            goal.pose.orientation.w,
         ]
         (roll, pitch, target_yaw) = euler_from_quaternion(quat_list)
+
+        # Rotate the robot to the target orientation
         self.rotate(target_yaw - self.dir, angular_speed)
+
+        # Return True if the robot reached the goal within tolerance
+        pos_tolerance = 0.02  # m
+        dir_tolerance = math.radians(5)  # rad
+        return (
+            abs(goal.pose.position.x - self.px) < pos_tolerance
+            and abs(goal.pose.position.y - self.py) < pos_tolerance
+            and abs(target_yaw - self.dir) < dir_tolerance
+        )
 
     def update_odometry(self, msg: Odometry):
         """
@@ -272,4 +283,4 @@ if __name__ == "__main__":
         action="store_true",
     )
     args, unknown = parser.parse_known_args()
-    Lab2(args.service).run()
+    GoToPose(args.service).run()
