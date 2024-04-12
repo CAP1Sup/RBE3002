@@ -6,6 +6,7 @@ import copy
 import math
 import rospy
 import cv2
+import argparse
 import numpy as np
 from nav_msgs.srv import GetPlan, GetMap
 from nav_msgs.msg import GridCells, OccupancyGrid, Path
@@ -17,7 +18,7 @@ import time
 
 class PathPlanner:
 
-    def __init__(self):
+    def __init__(self, dynamic_map=False):
         """
         Class constructor
         """
@@ -46,6 +47,9 @@ class PathPlanner:
 
         # Initialize the request counter
         self.request_counter = 0
+
+        # Store the dynamic map flag
+        self.dynamic_map = dynamic_map
 
         # Sleep to allow roscore to do some housekeeping
         rospy.sleep(1.0)
@@ -237,19 +241,24 @@ class PathPlanner:
             neighbors.append((p[0] + 1, p[1] + 1))
         return neighbors
 
-    @staticmethod
-    def request_map() -> OccupancyGrid:
+    def request_map(self) -> OccupancyGrid:
         """
         Requests the map from the map server.
         :return [OccupancyGrid] The grid if the service call was successful,
                                 None in case of error.
         """
         try:
+            # Decide which service to call based on the dynamic_map flag
+            if self.dynamic_map:
+                map_service_name = "dynamic_map"
+            else:
+                map_service_name = "static_map"
+
             # Wait for the service to become available
-            rospy.wait_for_service("static_map", timeout=5.0)
+            rospy.wait_for_service(map_service_name, timeout=5.0)
 
             # Create a proxy for the map service
-            get_map = rospy.ServiceProxy("static_map", GetMap)
+            get_map = rospy.ServiceProxy(map_service_name, GetMap)
 
             # Call the service
             return get_map().map
@@ -532,7 +541,7 @@ class PathPlanner:
         """
         # Request the map
         # In case of error, return an empty path
-        mapdata = PathPlanner.request_map()
+        mapdata = self.request_map()
         if mapdata is None:
             return Path()
 
@@ -564,4 +573,11 @@ class PathPlanner:
 
 
 if __name__ == "__main__":
-    PathPlanner().run()
+    parser = argparse.ArgumentParser(description="Path Planner")
+    parser.add_argument(
+        "-d",
+        "--use_dynamic_map",
+        action="store_true",
+    )
+    args, unknown = parser.parse_known_args()
+    PathPlanner(args.use_dynamic_map).run()
