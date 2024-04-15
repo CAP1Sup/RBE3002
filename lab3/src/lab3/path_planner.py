@@ -12,13 +12,13 @@ from nav_msgs.srv import GetPlan, GetMap
 from nav_msgs.msg import GridCells, OccupancyGrid, Path
 from geometry_msgs.msg import Point, Pose, PoseStamped
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from priority_queue import PriorityQueue
+from lab3.priority_queue import PriorityQueue
 import time
 
 
 class PathPlanner:
 
-    def __init__(self, dynamic_map=False):
+    def __init__(self, dynamic_map=False, visualize=True):
         """
         Class constructor
         """
@@ -29,27 +29,30 @@ class PathPlanner:
         # type GetPlan and calls self.plan_path() when a message is received
         rospy.Service("plan_path", GetPlan, self.plan_path)
 
-        # Create a publisher for the C-space (the enlarged occupancy grid)
-        # The topic is "/path_planner/cspace", the message type is GridCells
-        self.cspace_pub = rospy.Publisher(
-            "/path_planner/cspace", GridCells, queue_size=10
-        )
+        # If we're providing visuals, create the publishers
+        if visualize:
+            # Create a publisher for the C-space (the enlarged occupancy grid)
+            # The topic is "/path_planner/cspace", the message type is GridCells
+            self.cspace_pub = rospy.Publisher(
+                "/path_planner/cspace", GridCells, queue_size=10
+            )
 
-        # Create publishers for A* (expanded cells, frontier, ...)
-        # Choose the topic names, the message type is GridCells
-        self.expanded_pub = rospy.Publisher(
-            "/path_planner/expanded", GridCells, queue_size=10
-        )
-        self.frontier_pub = rospy.Publisher(
-            "/path_planner/frontier", GridCells, queue_size=10
-        )
-        self.path_pub = rospy.Publisher("/path_planner/path", Path, queue_size=10)
+            # Create publishers for A* (expanded cells, frontier, ...)
+            # Choose the topic names, the message type is GridCells
+            self.expanded_pub = rospy.Publisher(
+                "/path_planner/expanded", GridCells, queue_size=10
+            )
+            self.frontier_pub = rospy.Publisher(
+                "/path_planner/frontier", GridCells, queue_size=10
+            )
+            self.path_pub = rospy.Publisher("/path_planner/path", Path, queue_size=10)
 
         # Initialize the request counter
         self.request_counter = 0
 
-        # Store the dynamic map flag
+        # Store the flags
         self.dynamic_map = dynamic_map
+        self.visualize = visualize
 
         # Sleep to allow roscore to do some housekeeping
         rospy.sleep(1.0)
@@ -180,7 +183,9 @@ class PathPlanner:
         return poses
 
     @staticmethod
-    def is_cell_walkable(mapdata: OccupancyGrid, p: tuple[int, int]) -> bool:
+    def is_cell_walkable(
+        mapdata: OccupancyGrid, p: tuple[int, int], exclude_unknown=False
+    ) -> bool:
         """
         A cell is walkable if all of these conditions are true:
         1. It is within the boundaries of the grid;
@@ -197,11 +202,13 @@ class PathPlanner:
 
         # Check if the cell is free
         index = PathPlanner.grid_to_index(mapdata, p)
-        return mapdata.data[index] <= 25 and not mapdata.data[index] == -1
+        return mapdata.data[index] <= 25 and (
+            mapdata.data[index] != -1 or not exclude_unknown
+        )
 
     @staticmethod
     def neighbors_of_4(
-        mapdata: OccupancyGrid, p: tuple[int, int]
+        mapdata: OccupancyGrid, p: tuple[int, int], exclude_unknown=False
     ) -> list[tuple[int, int]]:
         """
         Returns the walkable 4-neighbors cells of (x,y) in the occupancy grid.
@@ -210,13 +217,13 @@ class PathPlanner:
         :return        [[(int,int)]]   A list of walkable 4-neighbors.
         """
         neighbors = []
-        if PathPlanner.is_cell_walkable(mapdata, (p[0] - 1, p[1])):
+        if PathPlanner.is_cell_walkable(mapdata, (p[0] - 1, p[1]), exclude_unknown):
             neighbors.append((p[0] - 1, p[1]))
-        if PathPlanner.is_cell_walkable(mapdata, (p[0] + 1, p[1])):
+        if PathPlanner.is_cell_walkable(mapdata, (p[0] + 1, p[1]), exclude_unknown):
             neighbors.append((p[0] + 1, p[1]))
-        if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] - 1)):
+        if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] - 1), exclude_unknown):
             neighbors.append((p[0], p[1] - 1))
-        if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] + 1)):
+        if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] + 1), exclude_unknown):
             neighbors.append((p[0], p[1] + 1))
         return neighbors
 
@@ -266,15 +273,12 @@ class PathPlanner:
             rospy.logerr("Service call failed: %s" % e)
             return None
 
-    def calc_cspace(
-        self, mapdata: OccupancyGrid, padding: int, visualize: bool = True
-    ) -> OccupancyGrid:
+    def calc_cspace(self, mapdata: OccupancyGrid, padding: int) -> OccupancyGrid:
         """
         Calculates the C-Space, i.e., makes the obstacles in the map thicker.
         Publishes the list of cells that were added to the original map.
         :param mapdata [OccupancyGrid] The map data.
         :param padding [int]           The number of cells around the obstacles.
-        :param visualize [bool]        Whether to visualize the C-space.
         :return        [OccupancyGrid] The C-Space.
         """
         rospy.loginfo("Calculating C-Space")
@@ -287,9 +291,6 @@ class PathPlanner:
             mapdata.info.height, mapdata.info.width
         )
 
-        # Any cell with a -1 is considered unknown, so we set it to 0
-        mapdata_np[mapdata_np == -1] = 0
-
         # Convert the numpy array to uint8
         mapdata_np = mapdata_np.astype(np.uint8)
 
@@ -301,11 +302,15 @@ class PathPlanner:
         # Dilate the obstacles
         cspace_np = cv2.dilate(mapdata_np, element, iterations=1)
 
+        # Convert the numpy array back to int8
+        # This will preserve the -1 values for unknown cells
+        cspace_np = cspace_np.astype(np.int8)
+
         # Convert the numpy array back to a list
         cspace.data = cspace_np.flatten().tolist()
 
         # If we're providing visuals, publish the C-space
-        if visualize:
+        if self.visualize:
             # Create a GridCells message
             cspace_grid = GridCells()
 
@@ -331,18 +336,13 @@ class PathPlanner:
         return cspace
 
     def a_star(
-        self,
-        mapdata: OccupancyGrid,
-        start: tuple[int, int],
-        goal: tuple[int, int],
-        visualize: bool = False,
+        self, mapdata: OccupancyGrid, start: tuple[int, int], goal: tuple[int, int]
     ) -> list[tuple[int, int]]:
         """
         Executes the A* algorithm to find the optimal path from the start to the goal.
         :param mapdata [OccupancyGrid] The map data.
         :param start [(int, int)] The starting point coordinates.
         :param goal [(int, int)] The goal point coordinates.
-        :param visualize [bool] Whether to visualize the path planning process.
         :return [list[(int, int)]] The optimal path as a list of coordinates.
         """
 
@@ -363,7 +363,7 @@ class PathPlanner:
         came_from = {start: None}
 
         # If we're providing visuals, initialize the GridCells messages
-        if visualize:
+        if self.visualize:
             expanded_cells = GridCells()
             expanded_cells.header.frame_id = mapdata.header.frame_id
             expanded_cells.cell_width = mapdata.info.resolution
@@ -399,7 +399,7 @@ class PathPlanner:
                         came_from[neighbor] = current
 
             # Visualize the frontier and the expanded cells
-            if visualize:
+            if self.visualize:
                 # Publish the expanded cells
                 expanded_cells.cells = [
                     PathPlanner.grid_to_world(mapdata, node)
@@ -483,15 +483,6 @@ class PathPlanner:
         if point1[0] == point2[0] or point1[1] == point2[1]:
             return True
 
-        # Convert the grid coordinates to world coordinates
-        p1 = PathPlanner.grid_to_world(mapdata, point1)
-
-        # Calculate the world distance between the two points
-        distance = (
-            math.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
-            * mapdata.info.resolution
-        )
-
         # Calculate the angle between the two points
         angle = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
 
@@ -502,6 +493,18 @@ class PathPlanner:
         ):
             return True
 
+        # The path is not clear
+        return False
+        """
+        # Convert the grid coordinates to world coordinates
+        p1 = PathPlanner.grid_to_world(mapdata, point1)
+
+        # Calculate the world distance between the two points
+        distance = (
+            math.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
+            * mapdata.info.resolution
+        )
+
         # Check if all cells touched by the path are clear
         search_precision = 0.1
         for dist in np.arange(0, distance, search_precision):
@@ -511,6 +514,7 @@ class PathPlanner:
             if not PathPlanner.is_cell_walkable(mapdata, grid_point):
                 return False
         return True
+        """
 
     def path_to_message(
         self, mapdata: OccupancyGrid, point_path: list[tuple[int, int]]
@@ -532,12 +536,11 @@ class PathPlanner:
         path.poses = PathPlanner.path_to_poses(mapdata, point_path)
         return path
 
-    def plan_path(self, msg: GetPlan, visualize: bool = True) -> Path:
+    def plan_path(self, msg: GetPlan) -> Path:
         """
         Plans a path between the start and goal locations in the requested.
         Internally uses A* to plan the optimal path.
         :param msg [GetPlan] The path planning request.
-        :param visualize [bool] Whether to visualize the path planning process.
         """
         # Request the map
         # In case of error, return an empty path
@@ -546,12 +549,12 @@ class PathPlanner:
             return Path()
 
         # Calculate the C-space and publish it
-        cspacedata = self.calc_cspace(mapdata, 1, visualize)
+        cspacedata = self.calc_cspace(mapdata, 1)
 
         # Execute A*
         start = PathPlanner.world_to_grid(cspacedata, msg.start.pose.position)
         goal = PathPlanner.world_to_grid(cspacedata, msg.goal.pose.position)
-        path = self.a_star(cspacedata, start, goal, visualize)
+        path = self.a_star(cspacedata, start, goal)
 
         # Optimize waypoints
         waypoints = PathPlanner.optimize_path(cspacedata, path)
@@ -560,7 +563,8 @@ class PathPlanner:
         path_msg = self.path_to_message(cspacedata, waypoints)
 
         # Publish the path
-        self.path_pub.publish(path_msg)
+        if self.visualize:
+            self.path_pub.publish(path_msg)
 
         # Return the Path message
         return path_msg
@@ -579,5 +583,10 @@ if __name__ == "__main__":
         "--use_dynamic_map",
         action="store_true",
     )
+    parser.add_argument(
+        "-n",
+        "--no_visualization",
+        action="store_true",
+    )
     args, unknown = parser.parse_known_args()
-    PathPlanner(args.use_dynamic_map).run()
+    PathPlanner(args.use_dynamic_map, not args.no_visualization).run()
