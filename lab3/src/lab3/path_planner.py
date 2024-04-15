@@ -18,7 +18,9 @@ import time
 
 class PathPlanner:
 
-    def __init__(self, dynamic_map=False, visualize=True):
+    def __init__(
+        self, dynamic_map: bool = False, padding: int = 1, visualize: bool = True
+    ):
         """
         Class constructor
         """
@@ -52,6 +54,7 @@ class PathPlanner:
 
         # Store the flags
         self.dynamic_map = dynamic_map
+        self.padding = padding
         self.visualize = visualize
 
         # Sleep to allow roscore to do some housekeeping
@@ -184,7 +187,7 @@ class PathPlanner:
 
     @staticmethod
     def is_cell_walkable(
-        mapdata: OccupancyGrid, p: tuple[int, int], exclude_unknown=False
+        mapdata: OccupancyGrid, p: tuple[int, int], exclude_unknown: bool = False
     ) -> bool:
         """
         A cell is walkable if all of these conditions are true:
@@ -208,7 +211,7 @@ class PathPlanner:
 
     @staticmethod
     def neighbors_of_4(
-        mapdata: OccupancyGrid, p: tuple[int, int], exclude_unknown=False
+        mapdata: OccupancyGrid, p: tuple[int, int], exclude_unknown: bool = False
     ) -> list[tuple[int, int]]:
         """
         Returns the walkable 4-neighbors cells of (x,y) in the occupancy grid.
@@ -549,7 +552,7 @@ class PathPlanner:
             return Path()
 
         # Calculate the C-space and publish it
-        cspacedata = self.calc_cspace(mapdata, 1)
+        cspacedata = self.calc_cspace(mapdata, self.padding)
 
         # Execute A*
         start = PathPlanner.world_to_grid(cspacedata, msg.start.pose.position)
@@ -582,11 +585,20 @@ if __name__ == "__main__":
         "-d",
         "--use_dynamic_map",
         action="store_true",
+        help="Use the dynamic map instead of the static map",
+    )
+    parser.add_argument(
+        "-p",
+        "--padding",
+        type=int,
+        default=1,
+        help="The padding around the obstacles in the C-space",
     )
     parser.add_argument(
         "-n",
         "--no_visualization",
         action="store_true",
+        help="Disable visualization",
     )
     args, unknown = parser.parse_known_args()
-    PathPlanner(args.use_dynamic_map, not args.no_visualization).run()
+    PathPlanner(args.use_dynamic_map, args.padding, not args.no_visualization).run()
