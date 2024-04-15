@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
-import rospy
-import math
-import numpy as np
 import argparse
-from lab2.srv import GoToPoseStamped
-from std_msgs.msg import Bool
-from nav_msgs.msg import Odometry
+import math
+
+import numpy as np
+import rospy
 from geometry_msgs.msg import PoseStamped, Twist
+from lab2.srv import GoToPoseStamped
+from nav_msgs.msg import Odometry
+from std_msgs.msg import Bool
 from tf.transformations import euler_from_quaternion
 
 

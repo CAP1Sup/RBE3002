@@ -2,18 +2,21 @@
 
 # Required if using Python 3.8 or below
 from __future__ import annotations
+
+import argparse
 import copy
 import math
-import rospy
-import cv2
-import argparse
-import numpy as np
-from nav_msgs.srv import GetPlan, GetMap
-from nav_msgs.msg import GridCells, OccupancyGrid, Path
-from geometry_msgs.msg import Point, Pose, PoseStamped
-from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from lab3.priority_queue import PriorityQueue
 import time
+
+import cv2
+import numpy as np
+import rospy
+from geometry_msgs.msg import Point, Pose, PoseStamped
+from nav_msgs.msg import GridCells, OccupancyGrid, Path
+from nav_msgs.srv import GetMap, GetPlan
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
+
+from lab3.priority_queue import PriorityQueue
 
 
 class PathPlanner:
