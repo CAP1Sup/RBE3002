@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import rospy
-import math
 import argparse
-from lab2.srv import GoToPoseStamped
-from std_msgs.msg import Float32, Bool
-from nav_msgs.msg import Odometry
-from nav_msgs.srv import GetPlan
+import math
+
+import rospy
 from geometry_msgs.msg import PoseStamped
 from lab2.srv import GoToPoseStamped
+from nav_msgs.msg import Odometry
+from nav_msgs.srv import GetPlan
+from std_msgs.msg import Bool, Float32
 
 
 class MoveToPoint:
