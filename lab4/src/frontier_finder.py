@@ -2,10 +2,14 @@
 
 # Required if using Python 3.8 or below
 from __future__ import annotations
+
+import time
+
 import rospy
-from geometry_msgs.msg import PoseStamped, Point
-from nav_msgs.msg import Odometry, OccupancyGrid, GridCells
+from geometry_msgs.msg import Point, PoseStamped
 from lab3.path_planner import PathPlanner
+from nav_msgs.msg import GridCells, OccupancyGrid, Odometry
+from numba import njit
 
 
 class FrontierFinder:
@@ -28,12 +32,26 @@ class FrontierFinder:
             "/frontier_finder/vis_poi", GridCells, queue_size=10
         )
 
+        # Create a frontier visualization publisher
+        self.frontier_vis_pub = rospy.Publisher(
+            "/frontier_finder/vis_frontier", GridCells, queue_size=10
+        )
         # Attributes to keep track of current position
         self.curr_pose = PoseStamped()
+
+        # Set of visited cells
+        self.visited = set()
+
+        # Cells of the last frontier
+        self.last_frontier = set()
 
         # Point of interest for the robot to explore
         self.poi = None
         self.poi_updated = False
+
+        # Skip the first few messages
+        # This is necessary because the map is not well defined at the start
+        self.skip = 2
 
     def update_odometry(self, msg: Odometry):
         """
@@ -48,8 +66,16 @@ class FrontierFinder:
         Updates the point of interest for the robot to explore.
         Runs when the map is updated.
         """
+        # Skip the first few messages
+        if self.skip > 0:
+            self.skip -= 1
+            return
+
+        # Get the current time
+        start_time = time.time()
+
         # Get the centroids of the frontier groups
-        centroids = FrontierFinder.get_frontier_centroids(msg)
+        centroids = self.get_frontier_centroids(msg)
 
         # If there are no frontier groups, set the point of interest to None
         if not centroids:
@@ -89,12 +115,14 @@ class FrontierFinder:
         self.poi_pub.publish(centroid_world_point)
 
         # Print the new point of interest
-        rospy.loginfo(f"New point of interest: {centroid_world_point}")
+        rospy.loginfo(
+            f"New point of interest: {centroid_world_point.x}, {centroid_world_point.y}",
+        )
 
         # Publish the point of interest visualization
         gc_poi = GridCells()
 
-        # Copy the data from the POI message
+        # Copy the data from the POI
         gc_poi.header.frame_id = msg.header.frame_id
         gc_poi.cell_width = msg.info.resolution
         gc_poi.cell_height = msg.info.resolution
@@ -105,14 +133,22 @@ class FrontierFinder:
         self.poi = centroid_world_point
         self.poi_updated = True
 
-    @staticmethod
-    def get_frontier_centroids(mapdata: OccupancyGrid) -> list[tuple[int, int]]:
+        # Print the time taken to find the point of interest
+        rospy.loginfo(f"POI found in: {time.time() - start_time:.4f}s")
+
+    def get_frontier_centroids(self, mapdata: OccupancyGrid) -> list[tuple[int, int]]:
         """
         Returns the centroids of the frontier groups of the current map.
         :return [list] The centroids of the frontier groups.
         """
+        # Get the frontier cells
+        frontier_cells = self.get_frontier_cells(mapdata)
+
         # Get the frontier groups
-        groups = FrontierFinder.get_frontier_groups(mapdata)
+        groups = self.get_frontier_groups(frontier_cells)
+
+        # Remove groups with less than 5 cells
+        groups = [group for group in groups if len(group) >= 10]
 
         # Calculate the centroids of the groups
         centroids = []
@@ -125,14 +161,15 @@ class FrontierFinder:
             centroids.append((x_sum // len(group), y_sum // len(group)))
         return centroids
 
-    @staticmethod
-    def get_frontier_groups(mapdata: OccupancyGrid) -> list[list[tuple[int, int]]]:
+    def get_frontier_groups(
+        self, ungrouped_cells: list[tuple[int, int]]
+    ) -> list[list[tuple[int, int]]]:
         """
         Returns the frontier groups of the current map.
         :return [list] The frontier groups.
         """
-        # Get the frontier cells
-        ungrouped_cells = FrontierFinder.get_frontier_cells(mapdata)
+        # Note the start time
+        start_time = time.time()
 
         # Loop until all cells are grouped
         groups = []
@@ -162,28 +199,83 @@ class FrontierFinder:
 
             # Add the new group to the list of groups
             groups.append(group)
+
+        # Print the time taken to find the frontier groups
+        rospy.loginfo(f"Frontier groups found in: {time.time() - start_time:.4f}s")
         return groups
 
     @staticmethod
+    @njit
     def is_adjacent(a: tuple[int, int], b: tuple[int, int]) -> bool:
         """
         Returns True if the two cells are adjacent.
         :return [bool] True if the two cells are adjacent.
         """
-        return (abs(a[0] - b[0]) <= 1) and (abs(a[1] - b[1]) <= 1)
+        if abs(a[0] - b[0]) > 1:
+            return False
+        return abs(a[1] - b[1]) <= 1
 
-    @staticmethod
-    def get_frontier_cells(mapdata: OccupancyGrid) -> list[tuple[int, int]]:
+    def get_frontier_cells(self, mapdata: OccupancyGrid) -> list[tuple[int, int]]:
         """
         Returns the frontier cells of the current map.
         :return [list] The frontier cells.
         """
-        frontier = []
-        for x in range(mapdata.info.width):
-            for y in range(mapdata.info.height):
-                if FrontierFinder.is_on_frontier(mapdata, (x, y)):
-                    frontier.append((x, y))
-        return frontier
+        # Note the start time
+        start_time = time.time()
+
+        # Initialize the frontier list, visited set, and queue set
+        frontier = set()
+        queue = set()
+
+        if not self.last_frontier:
+            # Seed the queue with the current position
+            curr_coords = PathPlanner.world_to_grid(
+                mapdata, self.curr_pose.pose.position
+            )
+            queue.add(curr_coords)
+        else:
+            for cell in self.last_frontier:
+                queue.add(cell)
+
+        # Process until the queue is empty
+        while len(queue) > 0:
+            # Get the current cell
+            curr_cell = queue.pop()
+
+            # Check if the cell is a frontier cell
+            if FrontierFinder.is_on_frontier(mapdata, curr_cell):
+                frontier.add(curr_cell)
+            else:
+                # Mark the cell as visited
+                self.visited.add(curr_cell)
+
+            # Add the neighbors to the queue
+            for neighbor in PathPlanner.neighbors_of_4(
+                mapdata, curr_cell, exclude_unknown=True
+            ):
+                if neighbor not in self.visited:
+                    if neighbor not in frontier:
+                        queue.add(neighbor)
+
+        # Publish the point of interest visualization
+        gc_frontier = GridCells()
+
+        # Copy the data from the frontier cells
+        gc_frontier.header.frame_id = mapdata.header.frame_id
+        gc_frontier.cell_width = mapdata.info.resolution
+        gc_frontier.cell_height = mapdata.info.resolution
+        gc_frontier.cells = [
+            PathPlanner.grid_to_world(mapdata, cell) for cell in frontier
+        ]
+        self.frontier_vis_pub.publish(gc_frontier)
+
+        # Print the time taken to find the frontier cells
+        rospy.loginfo(f"Frontier cells found in: {time.time() - start_time:.4f}s")
+
+        # Store the last frontier
+        self.last_frontier = frontier
+
+        return list(frontier)
 
     @staticmethod
     def is_on_frontier(mapdata: OccupancyGrid, cell: tuple[int, int]) -> bool:
@@ -191,10 +283,23 @@ class FrontierFinder:
         Returns True if the cell is a frontier cell.
         :return [bool] True if the cell is a frontier cell.
         """
-        return (
-            mapdata.data[PathPlanner.grid_to_index(mapdata, cell)] == -1
-            and len(PathPlanner.neighbors_of_4(mapdata, cell, exclude_unknown=True)) > 0
-        )
+        # Cell must be walkable
+        if not PathPlanner.is_cell_walkable(mapdata, cell, exclude_unknown=True):
+            return False
+
+        # Cell must have at least one unknown neighbor
+        if PathPlanner.is_cell_unknown(mapdata, (cell[0] + 1, cell[1])):
+            return True
+        if PathPlanner.is_cell_unknown(mapdata, (cell[0] - 1, cell[1])):
+            return True
+        if PathPlanner.is_cell_unknown(mapdata, (cell[0], cell[1] + 1)):
+            return True
+        if PathPlanner.is_cell_unknown(mapdata, (cell[0], cell[1] - 1)):
+            return True
+
+        # If we got here, the cell is a not frontier cell
+        # There are no unknown neighbors
+        return False
 
 
 if __name__ == "__main__":
