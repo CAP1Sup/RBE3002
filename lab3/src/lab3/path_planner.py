@@ -32,7 +32,10 @@ class PathPlanner:
 
         # Create a new service called "plan_path" that accepts messages of
         # type GetPlan and calls self.plan_path() when a message is received
-        rospy.Service("plan_path", GetPlan, self.plan_path)
+        rospy.Service("/plan_path", GetPlan, self.plan_path)
+
+        # Subscribe to the "/map" topic and call self.update_map() when a message is received
+        rospy.Subscriber("/map", OccupancyGrid, self.update_map)
 
         # If we're providing visuals, create the publishers
         if visualize:
@@ -54,6 +57,9 @@ class PathPlanner:
 
         # Initialize the request counter
         self.request_counter = 0
+
+        # Create attributes to store the map
+        self.map = None
 
         # Store the flags
         self.dynamic_map = dynamic_map
@@ -155,6 +161,9 @@ class PathPlanner:
         :param  path   [[(int,int)]]   The path as a list of tuples (cell coordinates).
         :return        [[PoseStamped]] The path as a list of PoseStamped (world coordinates).
         """
+        # Note the start time
+        start_time = time.time()
+
         # Loop through the path, appending the poses to the list
         poses = []
         for i in range(len(path)):
@@ -186,6 +195,9 @@ class PathPlanner:
 
             # Pose is ready, append it to the list
             poses.append(pose)
+
+        # Print the time taken
+        rospy.loginfo(f"Path converted to poses in: {time.time() - start_time:.4f}s")
         return poses
 
     @staticmethod
@@ -211,6 +223,56 @@ class PathPlanner:
         return mapdata.data[index] <= 25 and (
             mapdata.data[index] != -1 or not exclude_unknown
         )
+
+    @staticmethod
+    def closest_walkable_cell(
+        mapdata: OccupancyGrid, p: tuple[int, int], max_range: int
+    ) -> tuple[int, int]:
+        """
+        Returns the closest walkable cell to the given point.
+        :param mapdata [OccupancyGrid] The map information.
+        :param p       [(int, int)]    The coordinate in the grid.
+        :return        [(int, int)]    The closest walkable cell.
+        """
+        # Check if the cell is walkable
+        if PathPlanner.is_cell_walkable(mapdata, p, exclude_unknown=True):
+            return p
+
+        # Loop through the cells in the vicinity
+        for i in range(1, max_range + 1):
+            # Top, bottom, left, right
+            if PathPlanner.is_cell_walkable(mapdata, (p[0] - i, p[1])):
+                return (p[0] - i, p[1])
+            if PathPlanner.is_cell_walkable(mapdata, (p[0] + i, p[1])):
+                return (p[0] + i, p[1])
+            if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] - i)):
+                return (p[0], p[1] - i)
+            if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] + i)):
+                return (p[0], p[1] + i)
+
+            # Diagonals
+            if PathPlanner.is_cell_walkable(mapdata, (p[0] - i, p[1] - i)):
+                return (p[0] - i, p[1] - i)
+            if PathPlanner.is_cell_walkable(mapdata, (p[0] + i, p[1] - i)):
+                return (p[0] + i, p[1] - i)
+            if PathPlanner.is_cell_walkable(mapdata, (p[0] - i, p[1] + i)):
+                return (p[0] - i, p[1] + i)
+            if PathPlanner.is_cell_walkable(mapdata, (p[0] + i, p[1] + i)):
+                return (p[0] + i, p[1] + i)
+
+        # Throw a warning if no walkable cell was found
+        rospy.logwarn("No walkable cell found")
+        return p
+
+    @staticmethod
+    def is_cell_unknown(mapdata: OccupancyGrid, p: tuple[int, int]) -> bool:
+        """
+        A cell is unknown if the occupancy grid value is -1.
+        :param mapdata [OccupancyGrid] The map information.
+        :param p       [(int, int)]    The coordinate in the grid.
+        :return        [bool]          True if the cell is unknown, False otherwise
+        """
+        return mapdata.data[PathPlanner.grid_to_index(mapdata, p)] == -1
 
     @staticmethod
     def neighbors_of_4(
@@ -254,12 +316,21 @@ class PathPlanner:
             neighbors.append((p[0] + 1, p[1] + 1))
         return neighbors
 
+    def update_map(self, msg: OccupancyGrid):
+        """
+        Updates the map data.
+        :param msg [OccupancyGrid] The new map data.
+        """
+        self.map = msg
+
     def request_map(self) -> OccupancyGrid:
         """
         Requests the map from the map server.
         :return [OccupancyGrid] The grid if the service call was successful,
                                 None in case of error.
         """
+        if self.map is not None:
+            return self.map
         try:
             # Decide which service to call based on the dynamic_map flag
             if self.dynamic_map:
@@ -287,7 +358,8 @@ class PathPlanner:
         :param padding [int]           The number of cells around the obstacles.
         :return        [OccupancyGrid] The C-Space.
         """
-        rospy.loginfo("Calculating C-Space")
+        # Note the start time
+        start_time = time.time()
 
         # Copy the original so we can modify the C-space without affecting the original map
         cspace = copy.deepcopy(mapdata)
@@ -296,6 +368,9 @@ class PathPlanner:
         mapdata_np = np.array(mapdata.data).reshape(
             mapdata.info.height, mapdata.info.width
         )
+
+        # Convert any unknown cells to obstacles
+        mapdata_np[mapdata_np == -1] = 100
 
         # Convert the numpy array to uint8
         mapdata_np = mapdata_np.astype(np.uint8)
@@ -311,6 +386,9 @@ class PathPlanner:
         # Convert the numpy array back to int8
         # This will preserve the -1 values for unknown cells
         cspace_np = cspace_np.astype(np.int8)
+
+        # Convert the unknown cells back to -1
+        # cspace_np[cspace_np == 101] = -1
 
         # Convert the numpy array back to a list
         cspace.data = cspace_np.flatten().tolist()
@@ -337,6 +415,9 @@ class PathPlanner:
 
             # Publish GridCells message
             self.cspace_pub.publish(cspace_grid)
+
+        # Print the time taken
+        rospy.loginfo(f"C-space calculated in: {time.time() - start_time:.4f}s")
 
         # Return the C-space
         return cspace
@@ -400,6 +481,8 @@ class PathPlanner:
                     if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
                         # Update the cost and the parent of the neighbor
                         cost_so_far[neighbor] = new_cost
+
+                        # Calculate the priority
                         priority = new_cost + PathPlanner.manhattan_dist(neighbor, goal)
                         frontier.put(neighbor, priority)
                         came_from[neighbor] = current
@@ -462,7 +545,8 @@ class PathPlanner:
         :param path [[(x,y)]] The path as a list of tuples (grid coordinates)
         :return     [[(x,y)]] The optimized path as a list of tuples (grid coordinates)
         """
-        rospy.loginfo("Optimizing path")
+        # Note the start time
+        start_time = time.time()
 
         # Loop through the path
         i = 0
@@ -473,6 +557,9 @@ class PathPlanner:
                 path.pop(i + 1)
             else:
                 i += 1
+
+        # Print the time taken
+        rospy.loginfo(f"Path optimized in: {time.time() - start_time:.4f}s")
         return path
 
     @staticmethod
@@ -489,6 +576,9 @@ class PathPlanner:
         if point1[0] == point2[0] or point1[1] == point2[1]:
             return True
 
+        # The path is not clear
+        # return False
+
         # Calculate the angle between the two points
         angle = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
 
@@ -499,9 +589,6 @@ class PathPlanner:
         ):
             return True
 
-        # The path is not clear
-        return False
-        """
         # Convert the grid coordinates to world coordinates
         p1 = PathPlanner.grid_to_world(mapdata, point1)
 
@@ -512,7 +599,7 @@ class PathPlanner:
         )
 
         # Check if all cells touched by the path are clear
-        search_precision = 0.1
+        search_precision = 0.05
         for dist in np.arange(0, distance, search_precision):
             x = p1.x + dist * math.cos(angle)
             y = p1.y + dist * math.sin(angle)
@@ -520,7 +607,6 @@ class PathPlanner:
             if not PathPlanner.is_cell_walkable(mapdata, grid_point):
                 return False
         return True
-        """
 
     def path_to_message(
         self, mapdata: OccupancyGrid, point_path: list[tuple[int, int]]
@@ -548,18 +634,57 @@ class PathPlanner:
         Internally uses A* to plan the optimal path.
         :param msg [GetPlan] The path planning request.
         """
+        # Note the start time
+        start_time = time.time()
+
         # Request the map
         # In case of error, return an empty path
         mapdata = self.request_map()
         if mapdata is None:
             return Path()
 
+        # Print the time taken to get the map
+        rospy.loginfo(f"Map received in: {time.time() - start_time:.4f}s")
+
         # Calculate the C-space and publish it
         cspacedata = self.calc_cspace(mapdata, self.padding)
 
-        # Execute A*
+        # Calculate the start and goal coordinates
         start = PathPlanner.world_to_grid(cspacedata, msg.start.pose.position)
         goal = PathPlanner.world_to_grid(cspacedata, msg.goal.pose.position)
+
+        # Check if the start and goal are walkable
+        if not PathPlanner.is_cell_walkable(cspacedata, start):
+            # Attempt to find the closest walkable cell
+            new_start = PathPlanner.closest_walkable_cell(cspacedata, start, 10)
+
+            # Check if the new start is the same as the old start
+            if new_start == start:
+                rospy.logwarn("Start is not walkable")
+                return Path()
+            else:
+                # A new start was found, use it
+                rospy.logwarn("Start is not walkable, using closest walkable cell")
+                start = new_start
+        if not PathPlanner.is_cell_walkable(cspacedata, goal):
+            # Attempt to find the closest walkable cell
+            new_goal = PathPlanner.closest_walkable_cell(cspacedata, goal, 10)
+
+            # Check if the new goal is the same as the old goal
+            if new_goal == goal:
+                rospy.logwarn("Goal is not walkable")
+                return Path()
+            else:
+                # A new goal was found, use it
+                rospy.logwarn("Goal is not walkable, using closest walkable cell")
+                goal = new_goal
+
+        # Check if the start and goal are the same
+        if start == goal:
+            rospy.logwarn("Start and goal are the same")
+            return Path()
+
+        # Execute A*
         path = self.a_star(cspacedata, start, goal)
 
         # Optimize waypoints
@@ -571,6 +696,9 @@ class PathPlanner:
         # Publish the path
         if self.visualize:
             self.path_pub.publish(path_msg)
+
+        # Print the time taken
+        rospy.loginfo(f"Full path calculated in: {time.time() - start_time:.4f}s")
 
         # Return the Path message
         return path_msg
