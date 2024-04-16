@@ -37,7 +37,7 @@
     args="--use_dynamic_map --padding 4" />
 
   <!-- Path Executor -->
-  <node pkg="lab2" type="go_to_pose.py" name="go_to_pose" output="screen" args="-s" />
+  <node pkg="lab4" type="go_to_point.py" name="go_to_point" output="screen" />
 
   <!-- RViz -->
   <node pkg="rviz" type="rviz" name="rviz" required="true"
