@@ -51,7 +51,7 @@ class FrontierFinder:
 
         # Skip the first few messages
         # This is necessary because the map is not well defined at the start
-        self.skip = 2
+        self.skip = 1
 
     def update_odometry(self, msg: Odometry):
         """
@@ -174,33 +174,52 @@ class FrontierFinder:
         # Note the start time
         start_time = time.time()
 
-        # Loop until all cells are grouped
+        # Initialize the groups list
         groups = []
+
+        # Sort the cells by the x coordinate
+        ungrouped_cells = sorted(ungrouped_cells, key=lambda x: x[0])
+
+        # Loop until the ungrouped cells are empty
         while ungrouped_cells:
-            # Create a new group with the first ungrouped cell
+            # Initialize the group
             group = [ungrouped_cells.pop(0)]
 
-            repeat_loop = True
-            while repeat_loop:
-                # Assume the loop will not repeat
-                repeat_loop = False
+            # Check if there are any cells left
+            if not ungrouped_cells:
+                groups.append(group)
+                break
 
-                # Use a try loop so we can break out of both loops at once
+            # Get the maximum x coordinate of the group
+            max_x = group[-1][0] + 1
+
+            skipped_cells = 0
+            while ungrouped_cells[skipped_cells][0] <= max_x:
                 try:
-                    # Loop through the ungrouped cells, adding them to the group if they are adjacent
-                    for cell in ungrouped_cells:
-                        for group_cell in group:
-                            if FrontierFinder.is_adjacent(cell, group_cell):
-                                # Add the cell to the group
-                                group.append(cell)
-                                ungrouped_cells.remove(cell)
+                    for member in group:
+                        if FrontierFinder.is_adjacent(
+                            ungrouped_cells[skipped_cells], member
+                        ):
+                            group.append(ungrouped_cells.pop(skipped_cells))
+                            max_x = group[-1][0] + 1
+                            # Throw an exception to break out of the loop
+                            # Prevents the skipped_cells index from being incremented
+                            raise StopIteration
 
-                                # Repeat the loop, the new cell may be adjacent to other ungrouped cells
-                                raise StopIteration
+                    # No adjacent cells found, increment the skipped_cells index
+                    skipped_cells += 1
+
+                    # Check if we have reached the end of the list
+                    if skipped_cells >= len(ungrouped_cells):
+                        break
+
                 except StopIteration:
-                    repeat_loop = True
+                    if skipped_cells >= len(ungrouped_cells):
+                        break
+                    else:
+                        continue
 
-            # Add the new group to the list of groups
+            # Add the group to the groups list
             groups.append(group)
 
         # Print the time taken to find the frontier groups
