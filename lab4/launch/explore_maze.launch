@@ -34,7 +34,7 @@
 
   <!-- Path Planner -->
   <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
-    args="--use_dynamic_map --padding 4" />
+    args="--use_dynamic_map --padding 4 -n" />
 
   <!-- Path Executor -->
   <node pkg="lab4" type="go_to_point.py" name="go_to_point" output="screen" />

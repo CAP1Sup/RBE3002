@@ -79,9 +79,12 @@ class FrontierFinder:
 
         # If there are no frontier groups, set the point of interest to None
         if not centroids:
-            if self.poi is not None:
-                self.poi = None
-                self.poi_updated = True
+
+            # There are no frontiers, so the robot should stop searching
+            self.poi_pub.publish(None, None, None)
+
+            # Kill the node
+            rospy.signal_shutdown("No frontiers remaining, shutting down node")
             return
 
         # Calculate the current coordinates of the robot
@@ -148,7 +151,7 @@ class FrontierFinder:
         groups = self.get_frontier_groups(frontier_cells)
 
         # Remove groups with less than 5 cells
-        groups = [group for group in groups if len(group) >= 10]
+        groups = [group for group in groups if len(group) >= 3]
 
         # Calculate the centroids of the groups
         centroids = []
