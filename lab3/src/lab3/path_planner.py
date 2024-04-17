@@ -14,6 +14,7 @@ import rospy
 from geometry_msgs.msg import Point, Pose, PoseStamped
 from nav_msgs.msg import GridCells, OccupancyGrid, Path
 from nav_msgs.srv import GetMap, GetPlan
+from numba import njit
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 from lab3.priority_queue import PriorityQueue
@@ -235,34 +236,35 @@ class PathPlanner:
         :return        [(int, int)]    The closest walkable cell.
         """
         # Check if the cell is walkable
-        if PathPlanner.is_cell_walkable(mapdata, p, exclude_unknown=True):
+        if PathPlanner.is_cell_walkable(mapdata, p):
             return p
 
         # Loop through the cells in the vicinity
-        for i in range(1, max_range + 1):
-            # Top, bottom, left, right
-            if PathPlanner.is_cell_walkable(mapdata, (p[0] - i, p[1])):
-                return (p[0] - i, p[1])
-            if PathPlanner.is_cell_walkable(mapdata, (p[0] + i, p[1])):
-                return (p[0] + i, p[1])
-            if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] - i)):
-                return (p[0], p[1] - i)
-            if PathPlanner.is_cell_walkable(mapdata, (p[0], p[1] + i)):
-                return (p[0], p[1] + i)
-
-            # Diagonals
-            if PathPlanner.is_cell_walkable(mapdata, (p[0] - i, p[1] - i)):
-                return (p[0] - i, p[1] - i)
-            if PathPlanner.is_cell_walkable(mapdata, (p[0] + i, p[1] - i)):
-                return (p[0] + i, p[1] - i)
-            if PathPlanner.is_cell_walkable(mapdata, (p[0] - i, p[1] + i)):
-                return (p[0] - i, p[1] + i)
-            if PathPlanner.is_cell_walkable(mapdata, (p[0] + i, p[1] + i)):
-                return (p[0] + i, p[1] + i)
+        for radius in range(1, max_range + 1):
+            # Check the cells in a circle around the point
+            for cell in PathPlanner.circle_edges(radius, p):
+                if PathPlanner.is_cell_walkable(mapdata, cell):
+                    return cell
 
         # Throw a warning if no walkable cell was found
         rospy.logwarn("No walkable cell found")
         return p
+
+    @staticmethod
+    @njit
+    def circle_edges(radius: int, origin: tuple[int, int]) -> list[tuple[int, int]]:
+        """
+        Returns the coordinates of the edges of a circle.
+        :param radius [int]           The radius of the circle.
+        :param origin [(int, int)]    The center of the circle.
+        :return       [[(int,int)]]   The coordinates of the edges.
+        """
+        edges = []
+        for x in range(-radius, radius + 1):
+            y = int(math.sqrt(radius**2 - x**2))
+            edges.append((origin[0] + x, origin[1] + y))
+            edges.append((origin[0] + x, origin[1] - y))
+        return edges
 
     @staticmethod
     def is_cell_unknown(mapdata: OccupancyGrid, p: tuple[int, int]) -> bool:
