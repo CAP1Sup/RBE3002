@@ -58,8 +58,8 @@ class PathPlanner:
         # Initialize the request counter
         self.request_counter = 0
 
-        # Create attributes to store the map
-        self.map = None
+        # Create attributes to store the c-space
+        self.cspace = None
 
         # Store the flags
         self.dynamic_map = dynamic_map
@@ -318,19 +318,19 @@ class PathPlanner:
 
     def update_map(self, msg: OccupancyGrid):
         """
-        Updates the map data.
+        Updates the c-space using the most recent map data.
         :param msg [OccupancyGrid] The new map data.
         """
-        self.map = msg
+        self.cspace = self.calc_cspace(msg, self.padding)
 
-    def request_map(self) -> OccupancyGrid:
+    def request_cspace(self) -> OccupancyGrid:
         """
         Requests the map from the map server.
         :return [OccupancyGrid] The grid if the service call was successful,
                                 None in case of error.
         """
-        if self.map is not None:
-            return self.map
+        if self.cspace is not None:
+            return self.cspace
         try:
             # Decide which service to call based on the dynamic_map flag
             if self.dynamic_map:
@@ -512,7 +512,7 @@ class PathPlanner:
             rospy.logwarn("Goal is unreachable")
 
             # Time taken
-            rospy.loginfo(f"Time taken: {time.time() - start_time}")
+            rospy.loginfo(f"Time taken: {time.time() - start_time:.4f}")
             return []
 
     @staticmethod
@@ -637,26 +637,17 @@ class PathPlanner:
         # Note the start time
         start_time = time.time()
 
-        # Request the map
-        # In case of error, return an empty path
-        mapdata = self.request_map()
-        if mapdata is None:
-            return Path()
-
-        # Print the time taken to get the map
-        rospy.loginfo(f"Map received in: {time.time() - start_time:.4f}s")
-
-        # Calculate the C-space and publish it
-        cspacedata = self.calc_cspace(mapdata, self.padding)
+        # Request the c-space
+        cspace = self.request_cspace()
 
         # Calculate the start and goal coordinates
-        start = PathPlanner.world_to_grid(cspacedata, msg.start.pose.position)
-        goal = PathPlanner.world_to_grid(cspacedata, msg.goal.pose.position)
+        start = PathPlanner.world_to_grid(cspace, msg.start.pose.position)
+        goal = PathPlanner.world_to_grid(cspace, msg.goal.pose.position)
 
         # Check if the start and goal are walkable
-        if not PathPlanner.is_cell_walkable(cspacedata, start):
+        if not PathPlanner.is_cell_walkable(cspace, start):
             # Attempt to find the closest walkable cell
-            new_start = PathPlanner.closest_walkable_cell(cspacedata, start, 10)
+            new_start = PathPlanner.closest_walkable_cell(cspace, start, 10)
 
             # Check if the new start is the same as the old start
             if new_start == start:
@@ -666,9 +657,9 @@ class PathPlanner:
                 # A new start was found, use it
                 rospy.logwarn("Start is not walkable, using closest walkable cell")
                 start = new_start
-        if not PathPlanner.is_cell_walkable(cspacedata, goal):
+        if not PathPlanner.is_cell_walkable(cspace, goal):
             # Attempt to find the closest walkable cell
-            new_goal = PathPlanner.closest_walkable_cell(cspacedata, goal, 10)
+            new_goal = PathPlanner.closest_walkable_cell(cspace, goal, 10)
 
             # Check if the new goal is the same as the old goal
             if new_goal == goal:
@@ -685,13 +676,13 @@ class PathPlanner:
             return Path()
 
         # Execute A*
-        path = self.a_star(cspacedata, start, goal)
+        path = self.a_star(cspace, start, goal)
 
         # Optimize waypoints
-        waypoints = PathPlanner.optimize_path(cspacedata, path)
+        waypoints = PathPlanner.optimize_path(cspace, path)
 
         # Generate a Path message from the found path
-        path_msg = self.path_to_message(cspacedata, waypoints)
+        path_msg = self.path_to_message(cspace, waypoints)
 
         # Publish the path
         if self.visualize:

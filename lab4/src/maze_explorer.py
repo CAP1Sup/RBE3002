@@ -3,6 +3,8 @@
 # Required if using Python 3.8 or below
 from __future__ import annotations
 
+import os
+
 import subprocess
 
 import rospy
@@ -68,7 +70,8 @@ class MazeExplorer:
             rospy.sleep(0.25)
 
         # Loop until there are no more points of interest
-        while self.poi:
+        # When there are no more points of interest, a final Point with None values will be published
+        while self.poi.x:
 
             # Reset the point of interest flag
             self.poi_updated = False
@@ -96,7 +99,7 @@ class MazeExplorer:
                     continue
                 for pose in path.poses[1:]:
                     rospy.loginfo(
-                        f"Moving to {pose.pose.position.x}, {pose.pose.position.y}"
+                        f"Moving to {pose.pose.position.x:.4f}, {pose.pose.position.y:.4f}"
                     )
                     # Tell the robot to move to the next point
                     self.goal_pub.publish(pose.pose.position)
@@ -128,9 +131,23 @@ class MazeExplorer:
                 rospy.logerr(f"Service call failed: {e}")
                 return False
 
+        # Get the path to this file
+        path = subprocess.run(
+            "rospack find lab4",
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+        # Check if the maps directory exists
+        # If it doesn't, create it
+        if not os.path.exists(f"{path}/maps"):
+            os.makedirs(f"{path}/maps")
+
         # Save the current map
         subprocess.run(
-            "rosrun map_server map_saver -f maze",
+            f"rosrun map_server map_saver -f {path}/maps/map",
             shell=True,
             executable="/bin/bash",
         )
