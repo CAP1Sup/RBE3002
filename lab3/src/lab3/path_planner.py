@@ -56,9 +56,6 @@ class PathPlanner:
             )
             self.path_pub = rospy.Publisher("/path_planner/path", Path, queue_size=10)
 
-        # Initialize the request counter
-        self.request_counter = 0
-
         # Create attributes to store the c-space
         self.cspace = None
 

@@ -5,6 +5,10 @@ from __future__ import annotations
 
 import time
 
+import cv2
+
+import numpy as np
+
 import rospy
 from geometry_msgs.msg import Point, PoseStamped
 from lab3.path_planner import PathPlanner
@@ -119,7 +123,7 @@ class FrontierFinder:
 
         # Print the new point of interest
         rospy.loginfo(
-            f"New point of interest: {centroid_world_point.x}, {centroid_world_point.y}",
+            f"New point of interest: {centroid_world_point.x:.4f}, {centroid_world_point.y:.4f}",
         )
 
         # Publish the point of interest visualization
@@ -144,29 +148,46 @@ class FrontierFinder:
         Returns the centroids of the frontier groups of the current map.
         :return [list] The centroids of the frontier groups.
         """
+        # Note the start time
+        start_time = time.time()
+
         # Get the frontier cells
         frontier_cells = self.get_frontier_cells(mapdata)
 
-        # Get the frontier groups
-        groups = self.get_frontier_groups(frontier_cells)
+        # If there are no frontier cells, return an empty list
+        if not frontier_cells:
+            return []
 
-        # Remove groups with less than 5 cells
-        groups = [group for group in groups if len(group) >= 3]
+        # Calculate the blobs of the frontier cells
+        blobs, min_x, min_y = self.get_frontier_blobs(frontier_cells)
 
-        # Calculate the centroids of the groups
+        # Get the centroids of the frontier blobs
         centroids = []
-        for group in groups:
+        for i in range(1, blobs[0]):
+            # Get the cells of the blob
+            blob = np.argwhere(blobs[1] == i)
+
+            # If the blob is too small, skip it
+            if len(blob) < 5:
+                continue
+
+            # Calculate the centroid of the blob
             x_sum = 0
             y_sum = 0
-            for cell in group:
-                x_sum += cell[0]
-                y_sum += cell[1]
-            centroids.append((x_sum // len(group), y_sum // len(group)))
+            for cell in blob:
+                x_sum += cell[1]
+                y_sum += cell[0]
+            centroids.append((x_sum // len(blob) + min_x, y_sum // len(blob) + min_y))
+
+        # Print the time taken to find the frontier centroids
+        rospy.loginfo(
+            f"Total time for frontier centroids: {time.time() - start_time:.4f}s"
+        )
         return centroids
 
-    def get_frontier_groups(
+    def get_frontier_blobs(
         self, ungrouped_cells: list[tuple[int, int]]
-    ) -> list[list[tuple[int, int]]]:
+    ) -> tuple[tuple[int, cv2.MatLike], int, int]:
         """
         Returns the frontier groups of the current map.
         :return [list] The frontier groups.
@@ -174,57 +195,27 @@ class FrontierFinder:
         # Note the start time
         start_time = time.time()
 
-        # Initialize the groups list
-        groups = []
+        # Get the bounds of the frontier cells
+        min_x = min(ungrouped_cells, key=lambda x: x[0])[0]
+        max_x = max(ungrouped_cells, key=lambda x: x[0])[0]
+        min_y = min(ungrouped_cells, key=lambda x: x[1])[1]
+        max_y = max(ungrouped_cells, key=lambda x: x[1])[1]
 
-        # Sort the cells by the x coordinate
-        ungrouped_cells = sorted(ungrouped_cells, key=lambda x: x[0])
+        # Create an array of zeros the same size as the working area of the frontier cells
+        frontier_array = np.zeros(
+            (max_y - min_y + 1, max_x - min_x + 1), dtype=np.uint8
+        )
 
-        # Loop until the ungrouped cells are empty
-        while ungrouped_cells:
-            # Initialize the group
-            group = [ungrouped_cells.pop(0)]
+        # Add the frontier cells to the array at their positions
+        for cell in ungrouped_cells:
+            frontier_array[cell[1] - min_y, cell[0] - min_x] = 255
 
-            # Check if there are any cells left
-            if not ungrouped_cells:
-                groups.append(group)
-                break
-
-            # Get the maximum x coordinate of the group
-            max_x = group[-1][0] + 1
-
-            skipped_cells = 0
-            while ungrouped_cells[skipped_cells][0] <= max_x:
-                try:
-                    for member in group:
-                        if FrontierFinder.is_adjacent(
-                            ungrouped_cells[skipped_cells], member
-                        ):
-                            group.append(ungrouped_cells.pop(skipped_cells))
-                            max_x = group[-1][0] + 1
-                            # Throw an exception to break out of the loop
-                            # Prevents the skipped_cells index from being incremented
-                            raise StopIteration
-
-                    # No adjacent cells found, increment the skipped_cells index
-                    skipped_cells += 1
-
-                    # Check if we have reached the end of the list
-                    if skipped_cells >= len(ungrouped_cells):
-                        break
-
-                except StopIteration:
-                    if skipped_cells >= len(ungrouped_cells):
-                        break
-                    else:
-                        continue
-
-            # Add the group to the groups list
-            groups.append(group)
+        # Calculate the blobs
+        blobs = cv2.connectedComponents(frontier_array)
 
         # Print the time taken to find the frontier groups
         rospy.loginfo(f"Frontier groups found in: {time.time() - start_time:.4f}s")
-        return groups
+        return [blobs, min_x, min_y]
 
     @staticmethod
     @njit
