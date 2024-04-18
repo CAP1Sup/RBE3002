@@ -91,7 +91,7 @@ class MazeExplorer:
                 path = path_planner(
                     self.curr_pose,
                     PoseStamped(pose=Pose(position=self.poi)),
-                    0.0,
+                    0.25,
                 ).plan
 
                 # Follow the path
@@ -161,7 +161,7 @@ class MazeExplorer:
         path = path_planner(
             self.curr_pose,
             self.starting_pose,
-            0.0,
+            0.25,
         ).plan
 
         # Follow the path

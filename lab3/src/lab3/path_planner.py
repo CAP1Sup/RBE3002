@@ -15,9 +15,11 @@ from geometry_msgs.msg import Point, Pose, PoseStamped
 from nav_msgs.msg import GridCells, OccupancyGrid, Path
 from nav_msgs.srv import GetMap, GetPlan
 from numba import njit
+from std_msgs.msg import Float32
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 from lab3.priority_queue import PriorityQueue
+from lab3.srv import GetPathLen
 
 
 class PathPlanner:
@@ -34,6 +36,10 @@ class PathPlanner:
         # Create a new service called "plan_path" that accepts messages of
         # type GetPlan and calls self.plan_path() when a message is received
         rospy.Service("/plan_path", GetPlan, self.plan_path)
+
+        # Create a much faster service called "get_path_len"
+        # that accepts messages of type GetPathLen and calls self.calc_path_len() when a message is received
+        rospy.Service("/get_path_len", GetPathLen, self.get_path_len)
 
         # Subscribe to the "/map" topic and call self.update_map() when a message is received
         rospy.Subscriber("/map", OccupancyGrid, self.update_map)
@@ -109,6 +115,26 @@ class PathPlanner:
             p[1] + 0.5
         ) * mapdata.info.resolution + mapdata.info.origin.position.y
         return point
+
+    @staticmethod
+    def grid_to_pose_stamped(mapdata: OccupancyGrid, p: tuple[int, int]) -> PoseStamped:
+        """
+        Transforms a cell coordinate in the occupancy grid into a PoseStamped.
+        :param mapdata [OccupancyGrid] The map information.
+        :param p [(int, int)] The cell coordinate.
+        :return        [PoseStamped]   The pose in the world.
+        """
+        # Create a new pose
+        pose = PoseStamped()
+
+        # Set the frame id to the same as the map
+        pose.header.frame_id = mapdata.header.frame_id
+
+        # Calculate the world coordinates of the cell
+        pose.pose.position = PathPlanner.grid_to_world(mapdata, p)
+
+        # Return the pose
+        return pose
 
     @staticmethod
     def world_to_grid(mapdata: OccupancyGrid, wp: Point) -> tuple[int, int]:
@@ -386,9 +412,6 @@ class PathPlanner:
         # This will preserve the -1 values for unknown cells
         cspace_np = cspace_np.astype(np.int8)
 
-        # Convert the unknown cells back to -1
-        # cspace_np[cspace_np == 101] = -1
-
         # Convert the numpy array back to a list
         cspace.data = cspace_np.flatten().tolist()
 
@@ -643,10 +666,13 @@ class PathPlanner:
         start = PathPlanner.world_to_grid(cspace, msg.start.pose.position)
         goal = PathPlanner.world_to_grid(cspace, msg.goal.pose.position)
 
+        # Calculate the maximum range in grid coordinates for the closest walkable cell
+        max_range = int(msg.tolerance / cspace.info.resolution)
+
         # Check if the start and goal are walkable
         if not PathPlanner.is_cell_walkable(cspace, start):
             # Attempt to find the closest walkable cell
-            new_start = PathPlanner.closest_walkable_cell(cspace, start, 10)
+            new_start = PathPlanner.closest_walkable_cell(cspace, start, max_range)
 
             # Check if the new start is the same as the old start
             if new_start == start:
@@ -658,7 +684,7 @@ class PathPlanner:
                 start = new_start
         if not PathPlanner.is_cell_walkable(cspace, goal):
             # Attempt to find the closest walkable cell
-            new_goal = PathPlanner.closest_walkable_cell(cspace, goal, 10)
+            new_goal = PathPlanner.closest_walkable_cell(cspace, goal, max_range)
 
             # Check if the new goal is the same as the old goal
             if new_goal == goal:
@@ -692,6 +718,58 @@ class PathPlanner:
 
         # Return the Path message
         return path_msg
+
+    def get_path_len(self, msg: GetPathLen) -> UInt16:
+        """
+        Calculates the length of the path in grid cells.
+        :param msg [GetPathLen] The path length request.
+        """
+        # Request the c-space
+        cspace = self.request_cspace()
+
+        # Calculate the start and goal coordinates
+        start = PathPlanner.world_to_grid(cspace, msg.start.pose.position)
+        goal = PathPlanner.world_to_grid(cspace, msg.goal.pose.position)
+
+        # Calculate the maximum range in grid coordinates for the closest walkable cell
+        max_range = int(msg.tolerance / cspace.info.resolution)
+
+        # Check if the start and goal are walkable
+        if not PathPlanner.is_cell_walkable(cspace, start):
+            # Attempt to find the closest walkable cell
+            new_start = PathPlanner.closest_walkable_cell(cspace, start, max_range)
+
+            # Check if the new start is the same as the old start
+            if new_start == start:
+                rospy.logwarn("Start is not walkable")
+                return Float32()
+            else:
+                # A new start was found, use it
+                rospy.logwarn("Start is not walkable, using closest walkable cell")
+                start = new_start
+        if not PathPlanner.is_cell_walkable(cspace, goal):
+            # Attempt to find the closest walkable cell
+            new_goal = PathPlanner.closest_walkable_cell(cspace, goal, max_range)
+
+            # Check if the new goal is the same as the old goal
+            if new_goal == goal:
+                rospy.logwarn("Goal is not walkable")
+                return Float32()
+            else:
+                # A new goal was found, use it
+                rospy.logwarn("Goal is not walkable, using closest walkable cell")
+                goal = new_goal
+
+        # Check if the start and goal are the same
+        if start == goal:
+            rospy.logwarn("Start and goal are the same")
+            return Float32()
+
+        # Execute A*
+        path = self.a_star(cspace, start, goal)
+
+        # Return the path length
+        return Float32(data=len(path))
 
     def run(self):
         """
