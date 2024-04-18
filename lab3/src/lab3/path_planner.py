@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import math
 import time
 
@@ -386,9 +385,6 @@ class PathPlanner:
         # Note the start time
         start_time = time.time()
 
-        # Copy the original so we can modify the C-space without affecting the original map
-        cspace = copy.deepcopy(mapdata)
-
         # Convert the data to a numpy array
         mapdata_np = np.array(mapdata.data).reshape(
             mapdata.info.height, mapdata.info.width
@@ -406,14 +402,14 @@ class PathPlanner:
         )
 
         # Dilate the obstacles
-        cspace_np = cv2.dilate(mapdata_np, element, iterations=1)
+        cspace_np = cv2.dilate(mapdata_np, element)
 
         # Convert the numpy array back to int8
         # This will preserve the -1 values for unknown cells
         cspace_np = cspace_np.astype(np.int8)
 
         # Convert the numpy array back to a list
-        cspace.data = cspace_np.flatten().tolist()
+        mapdata.data = cspace_np.flatten().tolist()
 
         # If we're providing visuals, publish the C-space
         if self.visualize:
@@ -421,18 +417,18 @@ class PathPlanner:
             cspace_grid = GridCells()
 
             # Copy the data from the cspace map
-            cspace_grid.header.frame_id = cspace.header.frame_id
-            cspace_grid.cell_width = cspace.info.resolution
-            cspace_grid.cell_height = cspace.info.resolution
+            cspace_grid.header.frame_id = mapdata.header.frame_id
+            cspace_grid.cell_width = mapdata.info.resolution
+            cspace_grid.cell_height = mapdata.info.resolution
 
             # Populate the GridCells message with the C-space data
-            for x in range(cspace.info.width):
-                for y in range(cspace.info.height):
+            for x in range(mapdata.info.width):
+                for y in range(mapdata.info.height):
                     # Check if the cell is occupied
-                    index = PathPlanner.grid_to_index(cspace, (x, y))
-                    if cspace.data[index] >= 25:
+                    index = PathPlanner.grid_to_index(mapdata, (x, y))
+                    if mapdata.data[index] >= 25:
                         cspace_grid.cells.append(
-                            PathPlanner.grid_to_world(cspace, (x, y))
+                            PathPlanner.grid_to_world(mapdata, (x, y))
                         )
 
             # Publish GridCells message
@@ -442,7 +438,7 @@ class PathPlanner:
         rospy.loginfo(f"C-space calculated in: {time.time() - start_time:.4f}s")
 
         # Return the C-space
-        return cspace
+        return mapdata
 
     def a_star(
         self,
@@ -491,9 +487,7 @@ class PathPlanner:
             # Check if the goal has been reached
             if current == goal:
                 if print_info:
-                    rospy.loginfo(
-                        "Goal reached in %.6f seconds" % (time.time() - start_time)
-                    )
+                    rospy.loginfo(f"Goal reached in {time.time() - start_time:.4f}s")
                 path_found = True
                 path = PathPlanner.reconstruct_path(came_from, start, goal)
 
@@ -540,7 +534,9 @@ class PathPlanner:
                 rospy.logwarn("Goal is unreachable")
 
                 # Time taken
-                rospy.loginfo(f"Failed to find path in: {time.time() - start_time:.4f}")
+                rospy.loginfo(
+                    f"Failed to find path in: {time.time() - start_time:.4f}s"
+                )
             # No path found, return an empty list
             return []
 
@@ -645,8 +641,6 @@ class PathPlanner:
         :param point_path [[(int,int)]] The path on the grid (a list of tuples)
         :return     [Path]        A Path message (the coordinates are expressed in the world)
         """
-        rospy.loginfo("Converting coord list to a Path message")
-
         # Create a Path message
         path = Path()
 

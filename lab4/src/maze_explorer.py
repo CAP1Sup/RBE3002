@@ -9,11 +9,8 @@ import subprocess
 
 import rospy
 from geometry_msgs.msg import Point, Pose, PoseStamped
-from lab2.srv import GoToPoseStamped
-from lab3.path_planner import PathPlanner
-from nav_msgs.msg import GridCells, OccupancyGrid, Odometry
+from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetPlan
-from std_msgs.msg import Float32
 
 
 class MazeExplorer:
@@ -99,7 +96,7 @@ class MazeExplorer:
                     continue
                 for pose in path.poses[1:]:
                     rospy.loginfo(
-                        f"Moving to {pose.pose.position.x:.4f}, {pose.pose.position.y:.4f}"
+                        f"Moving to {pose.pose.position.x:.4f}m, {pose.pose.position.y:.4f}m"
                     )
                     # Tell the robot to move to the next point
                     self.goal_pub.publish(pose.pose.position)
