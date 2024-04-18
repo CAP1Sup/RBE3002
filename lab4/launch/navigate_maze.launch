@@ -1,6 +1,45 @@
 <launch>
-  <!-- AMCL -->
-  <include file="$(find turtlebot3_navigation)/launch/amcl.launch" />
+  <arg name="use_sim" default="false" />
+  <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]" />
+  <arg name="maze" default="turtlebot" /> <!-- change to "final_maze" for a more open/"easy" map -->
 
-  <!-- To be written -->
+  <node pkg="tf" type="static_transform_publisher" name="camera_tf"
+    args="-1.95 -0.55 2.0 -1.58 0 -1.58 /odom /camera_link 100" />
+
+  <group if="$(arg use_sim)">
+    <!-- Gazebo -->
+    <include file="$(find lab4)/launch/world_sim.launch">
+      <arg name="model" value="$(arg model)" />
+      <arg name="world" value="$(arg maze)" />
+      <arg name="x_pos" value="0.4" />
+      <arg name="y_pos" value="2.0" />
+      <arg name="z_pos" value="0.05" />
+    </include>
+  </group>
+
+  <!-- TurtleBot3 -->
+  <include file="$(find turtlebot3_bringup)/launch/turtlebot3_remote.launch" />
+
+  <!-- Map Server -->
+  <arg name="map_file" value="$(find lab4)/maps/map.yaml" />
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+
+  <!-- AMCL -->
+  <node pkg="amcl" type="amcl" name="amcl">
+    <rosparam command="load" file="$(find lab4)/config/amcl_params.yaml" />
+  </node>
+
+  <!-- Maze Navigator -->
+  <node pkg="lab4" type="maze_navigator.py" name="maze_navigator" output="screen" />
+
+  <!-- Path Planner -->
+  <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
+    args="--padding 5 -n" />
+
+  <!-- Path Executor -->
+  <node pkg="lab2" type="go_to_pose.py" name="go_to_pose" output="screen" args="-s" />
+
+  <!-- RViz -->
+  <node pkg="rviz" type="rviz" name="rviz" required="true"
+    args="-d $(find lab4)/rviz/navigate_maze.rviz" />
 </launch>

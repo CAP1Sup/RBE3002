@@ -1,11 +1,14 @@
 <launch>
   <arg name="use_sim" default="false" />
   <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]" />
-  <arg name="configuration_basename" default="turtlebot3_lds_2d.lua" />
   <arg name="set_base_frame" default="base_footprint" />
   <arg name="set_odom_frame" default="odom" />
   <arg name="set_map_frame" default="map" />
   <arg name="maze" default="turtlebot" /> <!-- change to "final_maze" for a more open/"easy" map -->
+
+  <node pkg="tf"
+    type="static_transform_publisher" name="camera_tf"
+    args="-1.95 -0.55 2.0 -1.58 0 -1.58 /odom /camera_link 100" />
 
   <group if="$(arg use_sim)">
     <!-- Gazebo -->
@@ -34,7 +37,7 @@
 
   <!-- Path Planner -->
   <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
-    args="--use_dynamic_map --padding 4 -n" />
+    args="--use_dynamic_map --padding 5 -n" />
 
   <!-- Path Executor -->
   <node pkg="lab4" type="go_to_point.py" name="go_to_point" output="screen" />
