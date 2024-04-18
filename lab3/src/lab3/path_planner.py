@@ -445,7 +445,11 @@ class PathPlanner:
         return cspace
 
     def a_star(
-        self, mapdata: OccupancyGrid, start: tuple[int, int], goal: tuple[int, int]
+        self,
+        mapdata: OccupancyGrid,
+        start: tuple[int, int],
+        goal: tuple[int, int],
+        print_info: bool = True,
     ) -> list[tuple[int, int]]:
         """
         Executes the A* algorithm to find the optimal path from the start to the goal.
@@ -486,9 +490,10 @@ class PathPlanner:
 
             # Check if the goal has been reached
             if current == goal:
-                rospy.loginfo(
-                    "Goal reached in %.6f seconds" % (time.time() - start_time)
-                )
+                if print_info:
+                    rospy.loginfo(
+                        "Goal reached in %.6f seconds" % (time.time() - start_time)
+                    )
                 path_found = True
                 path = PathPlanner.reconstruct_path(came_from, start, goal)
 
@@ -526,15 +531,17 @@ class PathPlanner:
                 ]
                 self.frontier_pub.publish(expanded_cells)
 
-        # Return the found path or an empty list
+        # Return the found path if there is one
         if path_found:
             return path
         else:
-            # The frontier is empty, the goal is unreachable
-            rospy.logwarn("Goal is unreachable")
+            if print_info:
+                # The frontier is empty, the goal is unreachable
+                rospy.logwarn("Goal is unreachable")
 
-            # Time taken
-            rospy.loginfo(f"Time taken: {time.time() - start_time:.4f}")
+                # Time taken
+                rospy.loginfo(f"Failed to find path in: {time.time() - start_time:.4f}")
+            # No path found, return an empty list
             return []
 
     @staticmethod
@@ -719,7 +726,7 @@ class PathPlanner:
         # Return the Path message
         return path_msg
 
-    def get_path_len(self, msg: GetPathLen) -> UInt16:
+    def get_path_len(self, msg: GetPathLen) -> Float32:
         """
         Calculates the length of the path in grid cells.
         :param msg [GetPathLen] The path length request.
@@ -741,11 +748,9 @@ class PathPlanner:
 
             # Check if the new start is the same as the old start
             if new_start == start:
-                rospy.logwarn("Start is not walkable")
                 return Float32()
             else:
                 # A new start was found, use it
-                rospy.logwarn("Start is not walkable, using closest walkable cell")
                 start = new_start
         if not PathPlanner.is_cell_walkable(cspace, goal):
             # Attempt to find the closest walkable cell
@@ -753,16 +758,13 @@ class PathPlanner:
 
             # Check if the new goal is the same as the old goal
             if new_goal == goal:
-                rospy.logwarn("Goal is not walkable")
                 return Float32()
             else:
                 # A new goal was found, use it
-                rospy.logwarn("Goal is not walkable, using closest walkable cell")
                 goal = new_goal
 
         # Check if the start and goal are the same
         if start == goal:
-            rospy.logwarn("Start and goal are the same")
             return Float32()
 
         # Execute A*

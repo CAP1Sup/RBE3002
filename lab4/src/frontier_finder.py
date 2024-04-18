@@ -44,12 +44,6 @@ class FrontierFinder:
         # Attributes to keep track of current position
         self.curr_pose = PoseStamped()
 
-        # Set of visited cells
-        self.visited = set()
-
-        # Cells of the last frontier
-        self.last_frontier = set()
-
         # Point of interest for the robot to explore
         self.poi = None
         self.poi_updated = False
@@ -281,16 +275,11 @@ class FrontierFinder:
         # Initialize the frontier list, visited set, and queue set
         frontier = set()
         queue = set()
+        visited = set()
 
-        if not self.last_frontier:
-            # Seed the queue with the current position
-            curr_coords = PathPlanner.world_to_grid(
-                mapdata, self.curr_pose.pose.position
-            )
-            queue.add(curr_coords)
-        else:
-            for cell in self.last_frontier:
-                queue.add(cell)
+        # Seed the queue with the current position
+        curr_coords = PathPlanner.world_to_grid(mapdata, self.curr_pose.pose.position)
+        queue.add(curr_coords)
 
         # Process until the queue is empty
         while len(queue) > 0:
@@ -302,13 +291,13 @@ class FrontierFinder:
                 frontier.add(curr_cell)
             else:
                 # Mark the cell as visited
-                self.visited.add(curr_cell)
+                visited.add(curr_cell)
 
             # Add the neighbors to the queue
             for neighbor in PathPlanner.neighbors_of_4(
                 mapdata, curr_cell, exclude_unknown=True
             ):
-                if neighbor not in self.visited:
+                if neighbor not in visited:
                     if neighbor not in frontier:
                         queue.add(neighbor)
 
@@ -326,9 +315,6 @@ class FrontierFinder:
 
         # Print the time taken to find the frontier cells
         rospy.loginfo(f"Frontier cells found in: {time.time() - start_time:.4f}s")
-
-        # Store the last frontier
-        self.last_frontier = frontier
 
         return list(frontier)
 
