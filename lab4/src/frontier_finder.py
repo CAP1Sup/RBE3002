@@ -12,6 +12,7 @@ import numpy as np
 import rospy
 from geometry_msgs.msg import Point, PoseStamped
 from lab3.path_planner import PathPlanner
+from lab3.srv import GetPathLen
 from nav_msgs.msg import GridCells, OccupancyGrid, Odometry
 from numba import njit
 
@@ -53,6 +54,9 @@ class FrontierFinder:
         self.poi = None
         self.poi_updated = False
 
+        # Point of interest exclusion set
+        self.poi_exclusions = set()
+
         # Skip the first few messages
         # This is necessary because the map is not well defined at the start
         self.skip = 1
@@ -91,19 +95,57 @@ class FrontierFinder:
             rospy.signal_shutdown("No frontiers remaining, shutting down node")
             return
 
+        # Attempt to filter out the excluded points of interest
+        filtered_centroids = []
+        for centroid in centroids:
+            if centroid not in self.poi_exclusions:
+                filtered_centroids.append(centroid)
+
+        # If the filtered list is empty, reset the exclusions
+        if not filtered_centroids:
+            self.poi_exclusions.clear()
+            filtered_centroids = centroids
+
         # Calculate the current coordinates of the robot
         curr_coords = PathPlanner.world_to_grid(msg, self.curr_pose.pose.position)
 
-        # Sort the list by the Manhattan distance to the robot
+        # Create a service proxy to get the path length
+        rospy.wait_for_service("/get_path_len")
+        path_len_srv = rospy.ServiceProxy("/get_path_len", GetPathLen)
+
+        # Sort the list by the path len to the robot
         closest_centroid = None
         closest_dist = float("inf")
         for centroid in centroids:
-            dist = PathPlanner.manhattan_dist(
-                centroid, (curr_coords[0], curr_coords[1])
-            )
-            if dist < closest_dist:
+            dist = path_len_srv(
+                PathPlanner.grid_to_pose_stamped(msg, curr_coords),
+                PathPlanner.grid_to_pose_stamped(msg, centroid),
+                0.25,
+            ).length.data
+
+            # If the distance is 0, there was an error
+            # Exclude the point and continue
+            if dist == 0:
+                self.poi_exclusions.add(centroid)
+
+            # Otherwise check if the distance is the closest
+            elif dist < closest_dist:
                 closest_dist = dist
                 closest_centroid = centroid
+
+        # If the closest centroid is None, there are no valid points remaining
+        if not closest_centroid:
+            if self.poi_exclusions:
+                self.poi_exclusions.clear()
+                rospy.logwarn("Resetting point of interest exclusions")
+                self.update_poi(msg)
+                return
+            else:
+                self.poi_pub.publish(None, None, None)
+                rospy.signal_shutdown(
+                    "No valid points of interest remaining, shutting down node"
+                )
+                return
 
         # Calculate the world coordinates of the centroid
         centroid_world_point = PathPlanner.grid_to_world(msg, closest_centroid)
