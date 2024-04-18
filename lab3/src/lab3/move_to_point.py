@@ -17,8 +17,8 @@ class MoveToPoint:
         """
         Class constructor
         """
-        # Initialize node, name it 'path_creator'
-        rospy.init_node("path_creator")
+        # Initialize node, name it 'move_to_point'
+        rospy.init_node("move_to_point")
 
         # Tell ROS that this node subscribes to Odometry messages on the '/odom' topic
         # When a message is received, call self.update_odometry

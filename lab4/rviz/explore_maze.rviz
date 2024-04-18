@@ -137,7 +137,7 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.030000001192092896
+      Size (m): 0.009999999776482582
       Style: Flat Squares
       Topic: /scan
       Unreliable: false
@@ -201,15 +201,6 @@ Visualization Manager:
       Value: true
     - Alpha: 1
       Class: rviz/GridCells
-      Color: 239; 41; 41
-      Enabled: true
-      Name: POI
-      Queue Size: 10
-      Topic: /frontier_finder/vis_poi
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Class: rviz/GridCells
       Color: 245; 121; 0
       Enabled: true
       Name: A* CSpace
@@ -224,6 +215,15 @@ Visualization Manager:
       Name: Frontier
       Queue Size: 10
       Topic: /frontier_finder/vis_frontier
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Class: rviz/GridCells
+      Color: 239; 41; 41
+      Enabled: true
+      Name: POI
+      Queue Size: 10
+      Topic: /frontier_finder/vis_poi
       Unreliable: false
       Value: true
   Enabled: true
@@ -263,7 +263,7 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 186.8275604248047
+      Scale: 277.4059753417969
       Target Frame: map
       X: 0.5948241949081421
       Y: 0.8359445929527283
