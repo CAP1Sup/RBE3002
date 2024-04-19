@@ -114,7 +114,7 @@ class FrontierFinder:
             dist = path_len_srv(
                 PathPlanner.grid_to_pose_stamped(msg, curr_coords),
                 PathPlanner.grid_to_pose_stamped(msg, centroid),
-                0.25,
+                0.5,
             ).length.data
 
             # If the distance is 0, there was an error
@@ -132,7 +132,6 @@ class FrontierFinder:
             if self.poi_exclusions:
                 self.poi_exclusions.clear()
                 rospy.logwarn("Resetting point of interest exclusions")
-                self.update_poi(msg)
                 return
             else:
                 self.poi_pub.publish(None, None, None)
@@ -204,7 +203,7 @@ class FrontierFinder:
             blob = np.argwhere(blobs[1] == i)
 
             # If the blob is too small, skip it
-            if len(blob) < 5:
+            if len(blob) < 3:
                 continue
 
             # Calculate the centroid of the blob
@@ -247,7 +246,7 @@ class FrontierFinder:
             frontier_array[cell[1] - min_y, cell[0] - min_x] = 255
 
         # Calculate the blobs
-        blobs = cv2.connectedComponents(frontier_array)
+        blobs = cv2.connectedComponents(frontier_array, connectivity=8)
 
         # Print the time taken to find the frontier groups
         rospy.loginfo(f"Frontier groups found in: {time.time() - start_time:.4f}s")

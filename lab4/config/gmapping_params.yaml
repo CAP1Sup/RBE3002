@@ -1,5 +1,5 @@
-map_update_interval: 2.0
-maxUrange: 3.0
+map_update_interval: 1.0
+maxUrange: 1.0
 sigma: 0.05
 kernelSize: 1
 lstep: 0.05
@@ -27,3 +27,34 @@ llsamplerange: 0.01
 llsamplestep: 0.01
 lasamplerange: 0.005
 lasamplestep: 0.005
+#
+# map_update_interval: 2.0
+# maxUrange: 2.0
+# sigma: 0.05
+# kernelSize: 1
+# lstep: 0.025
+# astep: 0.025
+# iterations: 7
+# lsigma: 0.075
+# ogain: 3.0
+# lskip: 0
+# minimumScore: 100
+# srr: 0.05
+# srt: 0.1
+# str: 0.09
+# stt: 0.15
+# linearUpdate: 0.05
+# angularUpdate: 0.08726
+# temporalUpdate: 0.5
+# resampleThreshold: 1
+# particles: 250
+# xmin: -0.5
+# ymin: -0.5
+# xmax: 0.5
+# ymax: 0.5
+# delta: 0.025
+# llsamplerange: 0.005
+# llsamplestep: 0.005
+# lasamplerange: 0.0025
+# lasamplestep: 0.0025
+# occ_thresh: 0.25
