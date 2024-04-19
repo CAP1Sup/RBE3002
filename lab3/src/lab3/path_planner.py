@@ -40,11 +40,14 @@ class PathPlanner:
         # that accepts messages of type GetPathLen and calls self.calc_path_len() when a message is received
         rospy.Service("/get_path_len", GetPathLen, self.get_path_len)
 
-        # Subscribe to the "/map" topic and call self.update_map() when a message is received
-        rospy.Subscriber("/map", OccupancyGrid, self.update_map)
+        # Create attributes to store the c-space
+        self.cspace = None
 
         # If we're providing visuals, create the publishers
         if visualize:
+            # Create a GridCells message
+            self.cspace_grid = GridCells()
+
             # Create a publisher for the C-space (the enlarged occupancy grid)
             # The topic is "/path_planner/cspace", the message type is GridCells
             self.cspace_pub = rospy.Publisher(
@@ -61,8 +64,8 @@ class PathPlanner:
             )
             self.path_pub = rospy.Publisher("/path_planner/path", Path, queue_size=10)
 
-        # Create attributes to store the c-space
-        self.cspace = None
+        # Subscribe to the "/map" topic and call self.update_map() when a message is received
+        rospy.Subscriber("/map", OccupancyGrid, self.update_map, queue_size=1)
 
         # Store the flags
         self.dynamic_map = dynamic_map
@@ -398,7 +401,7 @@ class PathPlanner:
 
         # Create a element for the dilation
         element = cv2.getStructuringElement(
-            cv2.MORPH_RECT, (2 * padding + 1, 2 * padding + 1)
+            cv2.MORPH_ELLIPSE, (2 * padding + 1, 2 * padding + 1)
         )
 
         # Dilate the obstacles
@@ -413,26 +416,39 @@ class PathPlanner:
 
         # If we're providing visuals, publish the C-space
         if self.visualize:
-            # Create a GridCells message
-            cspace_grid = GridCells()
-
             # Copy the data from the cspace map
-            cspace_grid.header.frame_id = mapdata.header.frame_id
-            cspace_grid.cell_width = mapdata.info.resolution
-            cspace_grid.cell_height = mapdata.info.resolution
+            self.cspace_grid.header.frame_id = mapdata.header.frame_id
+            self.cspace_grid.cell_width = mapdata.info.resolution
+            self.cspace_grid.cell_height = mapdata.info.resolution
+
+            # Find the bounds of the unoccupied cells
+            min_x = mapdata.info.width
+            max_x = 0
+            min_y = mapdata.info.height
+            max_y = 0
+            for cell in np.argwhere(cspace_np == 0):
+                min_x = min(min_x, cell[1])
+                max_x = max(max_x, cell[1])
+                min_y = min(min_y, cell[0])
+                max_y = max(max_y, cell[0])
+
+            # Add padding to the bounds
+            extra_cells = 10
+            min_x = max(0, min_x - extra_cells)
+            max_x = min(mapdata.info.width - 1, max_x + extra_cells)
+            min_y = max(0, min_y - extra_cells)
+            max_y = min(mapdata.info.height - 1, max_y + extra_cells)
 
             # Populate the GridCells message with the C-space data
-            for x in range(mapdata.info.width):
-                for y in range(mapdata.info.height):
-                    # Check if the cell is occupied
-                    index = PathPlanner.grid_to_index(mapdata, (x, y))
-                    if mapdata.data[index] >= 25:
-                        cspace_grid.cells.append(
-                            PathPlanner.grid_to_world(mapdata, (x, y))
-                        )
+            self.cspace_grid.cells = [
+                PathPlanner.grid_to_world(mapdata, (x, y))
+                for x in range(min_x, max_x + 1)
+                for y in range(min_y, max_y + 1)
+                if cspace_np[y, x] != 0
+            ]
 
             # Publish GridCells message
-            self.cspace_pub.publish(cspace_grid)
+            self.cspace_pub.publish(self.cspace_grid)
 
         # Print the time taken
         rospy.loginfo(f"C-space calculated in: {time.time() - start_time:.4f}s")
@@ -601,9 +617,6 @@ class PathPlanner:
         if point1[0] == point2[0] or point1[1] == point2[1]:
             return True
 
-        # The path is not clear
-        # return False
-
         # Calculate the angle between the two points
         angle = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
 
@@ -624,7 +637,7 @@ class PathPlanner:
         )
 
         # Check if all cells touched by the path are clear
-        search_precision = 0.05
+        search_precision = 0.01  # m
         for dist in np.arange(0, distance, search_precision):
             x = p1.x + dist * math.cos(angle)
             y = p1.y + dist * math.sin(angle)
