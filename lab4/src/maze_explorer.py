@@ -88,13 +88,13 @@ class MazeExplorer:
                 path = path_planner(
                     self.curr_pose,
                     PoseStamped(pose=Pose(position=self.poi)),
-                    0.25,
+                    0.5,
                 ).plan
 
                 # Follow the path
                 if len(path.poses) <= 1:
                     continue
-                for pose in path.poses[1:]:
+                for pose in path.poses:
                     rospy.loginfo(
                         f"Moving to {pose.pose.position.x:.4f}m, {pose.pose.position.y:.4f}m"
                     )
@@ -110,11 +110,11 @@ class MazeExplorer:
                         # Check if the robot has reached the goal
                         if (
                             abs(self.curr_pose.pose.position.x - pose.pose.position.x)
-                            < 0.05
+                            < 0.025
                             and abs(
                                 self.curr_pose.pose.position.y - pose.pose.position.y
                             )
-                            < 0.05
+                            < 0.025
                         ):
                             break
 
@@ -158,7 +158,7 @@ class MazeExplorer:
         path = path_planner(
             self.curr_pose,
             self.starting_pose,
-            0.25,
+            0.5,
         ).plan
 
         # Follow the path
