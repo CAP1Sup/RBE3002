@@ -5,8 +5,11 @@ import math
 
 import numpy as np
 import rospy
+
+import tf
 from geometry_msgs.msg import Point, Twist
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan
 from tf.transformations import euler_from_quaternion
 
 
@@ -38,6 +41,21 @@ class GoToPoint:
         # Set the rate
         self.rate = rospy.Rate(10)
 
+        # Attributes to keep track of current position
+        self.px = 0.0
+        self.py = 0.0
+        self.dir = 0.0
+
+        # Attributes to keep track of the goal
+        self.goal = None
+        self.goal_updated = False
+
+        # Attribute to keep track of the distance to the wall
+        self.too_close = False
+
+        # Create a TF listener
+        self.tf_listener = tf.TransformListener()
+
         # Tell ROS that this node publishes Twist messages on the '/cmd_vel' topic
         self.speed_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
 
@@ -48,14 +66,8 @@ class GoToPoint:
         # Tell ROS that this node subscribes to Point messages on the '/go_to_point/goal' topic
         rospy.Subscriber("/go_to_point/goal", Point, self.update_goal)
 
-        # Attributes to keep track of current position
-        self.px = 0.0
-        self.py = 0.0
-        self.dir = 0.0
-
-        # Attributes to keep track of the goal
-        self.goal = None
-        self.goal_updated = False
+        # Check if the robot is too close to the wall
+        # rospy.Subscriber("/scan", LaserScan, self.check_too_close)
 
     def update_goal(self, msg: Point):
         """
@@ -72,6 +84,11 @@ class GoToPoint:
         :param linear_speed  [float] [m/s]   The forward linear speed.
         :param angular_speed [float] [rad/s] The angular speed for rotating around the body center.
         """
+        if self.too_close:
+            linear_speed = 0.0
+            angular_speed = 0.0
+            rospy.loginfo("Too close to the wall")
+
         # Make a new Twist message
         twist = Twist()
         twist.linear.x = linear_speed
@@ -123,7 +140,7 @@ class GoToPoint:
         # Stop the robot
         self.send_speed(0.0, 0.0)
 
-    def go_to(self, goal: Point, linear_speed: float = 0.2, angular_speed: float = 0.5):
+    def go_to(self, goal: Point, linear_speed: float = 0.1, angular_speed: float = 0.5):
         """
         Calls rotate(), drive(), and rotate() to attain a given pose.
         This method is a callback bound to a Subscriber.
@@ -158,11 +175,22 @@ class GoToPoint:
         This method is a callback bound to a Subscriber.
         :param msg [Odometry] The current odometry information.
         """
-        self.px = msg.pose.pose.position.x
-        self.py = msg.pose.pose.position.y
-        quat_orig = msg.pose.pose.orientation
-        quat_list = [quat_orig.x, quat_orig.y, quat_orig.z, quat_orig.w]
-        (roll, pitch, self.dir) = euler_from_quaternion(quat_list)
+        trans = [0, 0]
+        rot = [0, 0, 0, 0]
+        try:
+            (trans, rot) = self.tf_listener.lookupTransform(
+                "/map", "/base_footprint", rospy.Time(0)
+            )
+        except (
+            tf.LookupException,
+            tf.ConnectivityException,
+            tf.ExtrapolationException,
+        ):
+            print("Error running tf transform")
+        self.px = trans[0]
+        self.py = trans[1]
+
+        (roll, pitch, self.dir) = euler_from_quaternion(rot)
 
     def smooth_drive(self, goal_x: float, goal_y: float, linear_speed: float):
         """
@@ -250,6 +278,19 @@ class GoToPoint:
 
         # Stop the robot
         self.send_speed(0.0, 0.0)
+
+    def check_too_close(self, msg: LaserScan):
+        # Remove the ranges that are smaller than the min range
+        valid_ranges = [
+            r for r in msg.ranges if r > msg.range_min and r < msg.range_max
+        ]
+
+        # Check the valid ranges against the threshold
+        threshold = 0.1  # m?
+        if min(valid_ranges) < threshold:
+            self.too_close = True
+        else:
+            self.too_close = False
 
     def run(self):
         """

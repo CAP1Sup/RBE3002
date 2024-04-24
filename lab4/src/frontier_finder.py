@@ -10,7 +10,8 @@ import cv2
 import numpy as np
 
 import rospy
-from geometry_msgs.msg import Point, PoseStamped
+import tf
+from geometry_msgs.msg import Point, Pose, Quaternion
 from lab3.path_planner import PathPlanner
 from lab3.srv import GetPathLen
 from nav_msgs.msg import GridCells, OccupancyGrid, Odometry
@@ -21,6 +22,9 @@ class FrontierFinder:
     def __init__(self):
         # Initialize node, name it 'frontier_finder'
         rospy.init_node("frontier_finder")
+
+        # Create a TF listener
+        self.tf_listener = tf.TransformListener()
 
         # Tell ROS that this node subscribes to Odometry messages on the '/odom' topic
         # When a message is received, call self.update_odometry
@@ -42,7 +46,7 @@ class FrontierFinder:
             "/frontier_finder/vis_frontier", GridCells, queue_size=10
         )
         # Attributes to keep track of current position
-        self.curr_pose = PoseStamped()
+        self.curr_pose = Pose()
 
         # Point of interest for the robot to explore
         self.poi = None
@@ -61,7 +65,22 @@ class FrontierFinder:
         This method is a callback bound to a Subscriber.
         :param msg [Odometry] The current odometry information.
         """
-        self.curr_pose = PoseStamped(pose=msg.pose.pose)
+        trans = [0, 0]
+        rot = [0, 0, 0, 0]
+        try:
+            (trans, rot) = self.tf_listener.lookupTransform(
+                "/map", "/base_footprint", rospy.Time(0)
+            )
+        except (
+            tf.LookupException,
+            tf.ConnectivityException,
+            tf.ExtrapolationException,
+        ):
+            print("Error running tf transform")
+
+        # Create a PoseStamped message
+        quat = Quaternion(x=rot[0], y=rot[1], z=rot[2], w=rot[3])
+        self.curr_pose = Pose(position=Point(x=trans[0], y=trans[1]), orientation=quat)
 
     def update_poi(self, msg: OccupancyGrid):
         """
@@ -101,7 +120,7 @@ class FrontierFinder:
             filtered_centroids = centroids
 
         # Calculate the current coordinates of the robot
-        curr_coords = PathPlanner.world_to_grid(msg, self.curr_pose.pose.position)
+        curr_coords = PathPlanner.world_to_grid(msg, self.curr_pose.position)
 
         # Create a service proxy to get the path length
         rospy.wait_for_service("/get_path_len")
@@ -277,7 +296,7 @@ class FrontierFinder:
         visited = set()
 
         # Seed the queue with the current position
-        curr_coords = PathPlanner.world_to_grid(mapdata, self.curr_pose.pose.position)
+        curr_coords = PathPlanner.world_to_grid(mapdata, self.curr_pose.position)
         queue.add(curr_coords)
 
         # Process until the queue is empty

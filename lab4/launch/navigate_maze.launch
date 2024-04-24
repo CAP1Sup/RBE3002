@@ -34,10 +34,10 @@
 
   <!-- Path Planner -->
   <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
-    args="--padding 5 -n" />
+    args="--padding 10" />
 
   <!-- Path Executor -->
-  <node pkg="lab2" type="go_to_pose.py" name="go_to_pose" output="screen" args="-s" />
+  <node pkg="lab4" type="go_to_point.py" name="go_to_point" output="screen" />
 
   <!-- RViz -->
   <node pkg="rviz" type="rviz" name="rviz" required="true"

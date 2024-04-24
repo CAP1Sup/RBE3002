@@ -6,10 +6,6 @@
   <arg name="set_map_frame" default="map" />
   <arg name="maze" default="turtlebot" /> <!-- change to "final_maze" for a more open/"easy" map -->
 
-  <node pkg="tf"
-    type="static_transform_publisher" name="camera_tf"
-    args="-1.95 -0.55 2.0 -1.58 0 -1.58 /odom /camera_link 100" />
-
   <group if="$(arg use_sim)">
     <!-- Gazebo -->
     <include file="$(find lab4)/launch/world_sim.launch">
@@ -37,7 +33,7 @@
 
   <!-- Path Planner -->
   <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
-    args="--use_dynamic_map --padding 5 -n" />
+    args="--use_dynamic_map --padding 10 -n" />
 
   <!-- Path Executor -->
   <node pkg="lab4" type="go_to_point.py" name="go_to_point" output="screen" />
