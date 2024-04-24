@@ -13,7 +13,7 @@ initial_pose_a: 0.0
 gui_publish_rate: 50.0
 scan: "scan"
 laser_min_range: -1.0 # Use the laser's reported min range
-laser_max_range: 3.5
+laser_max_range: 1.0
 laser_max_beams: 180
 laser_z_hit: 0.5
 laser_z_short: 0.05
@@ -24,9 +24,9 @@ laser_lambda_short: 0.1
 laser_likelihood_max_dist: 2.0
 laser_model_type: likelihood_field
 odom_model_type: diff-corrected
-odom_alpha1: 0.1
-odom_alpha2: 0.1
-odom_alpha3: 0.1
-odom_alpha4: 0.1
+odom_alpha1: 0.03
+odom_alpha2: 0.05
+odom_alpha3: 0.03
+odom_alpha4: 0.05
 odom_frame_id: odom
 base_frame_id: base_footprint

@@ -8,7 +8,8 @@ import os
 import subprocess
 
 import rospy
-from geometry_msgs.msg import Point, Pose, PoseStamped
+import tf
+from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetPlan
 
@@ -21,12 +22,21 @@ class MazeExplorer:
         # Rate limit the node
         self.rate = rospy.Rate(10)
 
+        # Create a TF listener
+        self.tf_listener = tf.TransformListener()
+
+        # Variable to disable the POI callback
+        self.disable_poi = False
+
         # Tell ROS that this node subscribes to Odometry messages on the '/odom' topic
         # When a message is received, call self.update_odometry
         rospy.Subscriber("/odom", Odometry, self.update_odometry)
 
         # Subscribe to the frontier POI topic
         rospy.Subscriber("/frontier_finder/poi", Point, self.update_poi)
+
+        # Subscribe to the 2D Nav Goal topic
+        rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.end_exploration)
 
         # Publish the goal for the robot
         self.goal_pub = rospy.Publisher("/go_to_point/goal", Point, queue_size=10)
@@ -42,24 +52,52 @@ class MazeExplorer:
         self.poi = None
         self.poi_updated = False
 
+    def end_exploration(self, msg: PoseStamped):
+        """
+        Ends the exploration.
+        """
+        # Deregister the update POI callback
+        self.disable_poi = True
+
+        # Publish a Point with None values to stop the exploration
+        self.poi = Point(x=None)
+        self.poi_updated = True
+
     def update_odometry(self, msg: Odometry):
         """
         Updates the current pose of the robot.
         This method is a callback bound to a Subscriber.
         :param msg [Odometry] The current odometry information.
         """
-        self.curr_pose = PoseStamped(pose=msg.pose.pose)
+        trans = [0, 0]
+        rot = [0, 0, 0, 0]
+        try:
+            (trans, rot) = self.tf_listener.lookupTransform(
+                "/map", "/base_footprint", rospy.Time(0)
+            )
+        except (
+            tf.LookupException,
+            tf.ConnectivityException,
+            tf.ExtrapolationException,
+        ):
+            print("Error running tf transform")
+
+        # Create a PoseStamped message
+        quat = Quaternion(x=rot[0], y=rot[1], z=rot[2], w=rot[3])
+        pose = Pose(position=Point(x=trans[0], y=trans[1]), orientation=quat)
+        self.curr_pose = PoseStamped(pose=pose)
 
         # Save the starting pose
         if not self.starting_pose:
-            self.starting_pose = self.curr_pose  #
+            self.starting_pose = self.curr_pose
 
     def update_poi(self, msg: Point):
         """
         Updates the internal point of interest for the robot to explore.
         """
-        self.poi = msg
-        self.poi_updated = True
+        if not self.disable_poi:
+            self.poi = msg
+            self.poi_updated = True
 
     def run(self):
         # Wait until the first point of interest is found
