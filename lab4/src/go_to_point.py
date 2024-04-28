@@ -5,10 +5,11 @@ import math
 
 import numpy as np
 import rospy
-from geometry_msgs.msg import PoseStamped, Twist
-from lab2.srv import GoToPoseStamped
+
+import tf
+from geometry_msgs.msg import Point, Twist
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Bool
+from sensor_msgs.msg import LaserScan
 from tf.transformations import euler_from_quaternion
 
 
@@ -28,17 +29,32 @@ def wrap(angle):
     return angle
 
 
-class GoToPose:
+class GoToPoint:
 
     def __init__(self, is_service=False):
         """
         Class constructor
         """
-        # Initialize node, name it 'lab2'
-        rospy.init_node("lab2")
+        # Initialize node, name it 'go_to_point'
+        rospy.init_node("go_to_point")
 
         # Set the rate
         self.rate = rospy.Rate(10)
+
+        # Attributes to keep track of current position
+        self.px = 0.0
+        self.py = 0.0
+        self.dir = 0.0
+
+        # Attributes to keep track of the goal
+        self.goal = None
+        self.goal_updated = False
+
+        # Attribute to keep track of the distance to the wall
+        self.too_close = False
+
+        # Create a TF listener
+        self.tf_listener = tf.TransformListener()
 
         # Tell ROS that this node publishes Twist messages on the '/cmd_vel' topic
         self.speed_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
@@ -47,20 +63,20 @@ class GoToPose:
         # When a message is received, call self.update_odometry
         rospy.Subscriber("/odom", Odometry, self.update_odometry)
 
-        # Decide whether to use the service or the subscriber
-        if is_service:
-            # Tell ROS that this node provides a service on the '/go_to_goal' topic
-            # When a request is received, call self.go_to_service
-            rospy.Service("/go_to_pose_stamped", GoToPoseStamped, self.go_to_service)
-        else:
-            # Tell ROS that this node subscribes to PoseStamped messages on the '/move_base_simple/goal' topic
-            # When a message is received, call self.go_to
-            rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.go_to)
+        # Tell ROS that this node subscribes to Point messages on the '/go_to_point/goal' topic
+        rospy.Subscriber("/go_to_point/goal", Point, self.update_goal)
 
-        # Attributes to keep track of current position
-        self.px = 0.0
-        self.py = 0.0
-        self.dir = 0.0
+        # Check if the robot is too close to the wall
+        # rospy.Subscriber("/scan", LaserScan, self.check_too_close)
+
+    def update_goal(self, msg: Point):
+        """
+        Updates the goal point for the robot to reach.
+        This method is a callback bound to a Subscriber.
+        :param msg [Point] The new goal point.
+        """
+        self.goal = msg
+        self.goal_updated = True
 
     def send_speed(self, linear_speed: float, angular_speed: float):
         """
@@ -68,6 +84,11 @@ class GoToPose:
         :param linear_speed  [float] [m/s]   The forward linear speed.
         :param angular_speed [float] [rad/s] The angular speed for rotating around the body center.
         """
+        if self.too_close:
+            linear_speed = 0.0
+            angular_speed = 0.0
+            rospy.loginfo("Too close to the wall")
+
         # Make a new Twist message
         twist = Twist()
         twist.linear.x = linear_speed
@@ -112,30 +133,23 @@ class GoToPose:
         start_dir = self.dir
         while abs(wrap(self.dir - start_dir) - angle) > 0.1:
             self.send_speed(0.0, aspeed)
+            if self.goal_updated:
+                break
             self.rate.sleep()
 
         # Stop the robot
         self.send_speed(0.0, 0.0)
 
-    def go_to_service(self, req: GoToPoseStamped):
-        result = self.go_to(req.goal, req.linear_speed.data, req.angular_speed.data)
-        return Bool(data=result)
-
-    def go_to(
-        self, goal: PoseStamped, linear_speed: float = 0.2, angular_speed: float = 0.5
-    ):
+    def go_to(self, goal: Point, linear_speed: float = 0.1, angular_speed: float = 0.5):
         """
         Calls rotate(), drive(), and rotate() to attain a given pose.
         This method is a callback bound to a Subscriber.
-        :param msg [PoseStamped] The target pose.
+        :param goal [Point] The target point.
         :param linear_speed [float] [m/s] The maximum forward linear speed. Should be positive.
         :param angular_speed [float] [rad/s] The maximum angular speed. Should be positive.
         """
         # Calculate the angle to the target point
-        initial_angle = (
-            math.atan2(goal.pose.position.y - self.py, goal.pose.position.x - self.px)
-            - self.dir
-        )
+        initial_angle = math.atan2(goal.y - self.py, goal.x - self.px) - self.dir
 
         # Wrap the angle to the range [-pi, pi]
         initial_angle = wrap(initial_angle)
@@ -150,30 +164,9 @@ class GoToPose:
         # Execute the robot movements to reach the target pose
         self.rotate(initial_angle, angular_speed)
         self.smooth_drive(
-            goal.pose.position.x,
-            goal.pose.position.y,
+            goal.x,
+            goal.y,
             linear_speed * drive_dir,
-        )
-
-        # Convert the quaternion to Euler angles
-        quat_list = [
-            goal.pose.orientation.x,
-            goal.pose.orientation.y,
-            goal.pose.orientation.z,
-            goal.pose.orientation.w,
-        ]
-        (roll, pitch, target_yaw) = euler_from_quaternion(quat_list)
-
-        # Rotate the robot to the target orientation
-        self.rotate(target_yaw - self.dir, angular_speed)
-
-        # Return True if the robot reached the goal within tolerance
-        pos_tolerance = 0.02  # m
-        dir_tolerance = math.radians(5)  # rad
-        return (
-            abs(goal.pose.position.x - self.px) < pos_tolerance
-            and abs(goal.pose.position.y - self.py) < pos_tolerance
-            and abs(target_yaw - self.dir) < dir_tolerance
         )
 
     def update_odometry(self, msg: Odometry):
@@ -182,11 +175,22 @@ class GoToPose:
         This method is a callback bound to a Subscriber.
         :param msg [Odometry] The current odometry information.
         """
-        self.px = msg.pose.pose.position.x
-        self.py = msg.pose.pose.position.y
-        quat_orig = msg.pose.pose.orientation
-        quat_list = [quat_orig.x, quat_orig.y, quat_orig.z, quat_orig.w]
-        (roll, pitch, self.dir) = euler_from_quaternion(quat_list)
+        trans = [0, 0]
+        rot = [0, 0, 0, 0]
+        try:
+            (trans, rot) = self.tf_listener.lookupTransform(
+                "/map", "/base_footprint", rospy.Time(0)
+            )
+        except (
+            tf.LookupException,
+            tf.ConnectivityException,
+            tf.ExtrapolationException,
+        ):
+            print("Error running tf transform")
+        self.px = trans[0]
+        self.py = trans[1]
+
+        (roll, pitch, self.dir) = euler_from_quaternion(rot)
 
     def smooth_drive(self, goal_x: float, goal_y: float, linear_speed: float):
         """
@@ -269,19 +273,35 @@ class GoToPose:
                 self.send_speed(desired_speed, heading_correction)
                 self.rate.sleep()
 
+            if self.goal_updated:
+                break
+
         # Stop the robot
         self.send_speed(0.0, 0.0)
 
+    def check_too_close(self, msg: LaserScan):
+        # Remove the ranges that are smaller than the min range
+        valid_ranges = [
+            r for r in msg.ranges if r > msg.range_min and r < msg.range_max
+        ]
+
+        # Check the valid ranges against the threshold
+        threshold = 0.1  # m?
+        if min(valid_ranges) < threshold:
+            self.too_close = True
+        else:
+            self.too_close = False
+
     def run(self):
-        rospy.spin()
+        """
+        Runs the node until it is stopped.
+        """
+        while True:
+            # If the goal has been updated, move to the new goal
+            if self.goal_updated and self.goal:
+                self.goal_updated = False
+                self.go_to(self.goal)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Lab 2")
-    parser.add_argument(
-        "-s",
-        "--service",
-        action="store_true",
-    )
-    args, unknown = parser.parse_known_args()
-    GoToPose(args.service).run()
+    GoToPoint().run()

@@ -1,5 +1,4 @@
 <launch>
-
   <!-- Setup the robot information -->
   <include file="$(find turtlebot3_bringup)/launch/includes/description.launch.xml">
     <arg name="model" value="$(env TURTLEBOT3_MODEL)" />
