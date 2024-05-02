@@ -1,4 +1,4 @@
-image: /home/cap1sup/catkin_ws/src/RBE3002_D24_Team13/lab4/maps/easy_maze.pgm
+image: easy_maze.pgm
 resolution: 0.025000
 origin: [-0.500000, -10.900000, 0.000000]
 negate: 0
