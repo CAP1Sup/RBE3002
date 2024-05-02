@@ -20,21 +20,38 @@
   <!-- TurtleBot3 -->
   <include file="$(find turtlebot3_bringup)/launch/turtlebot3_remote.launch" />
 
-  <!-- Map Server -->
-  <arg name="map_file" value="$(find lab4)/maps/final_maze.yaml" />
-  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+  <!-- If using sim -->
+  <group if="$(arg use_sim)">
+    <!-- Map Server -->
+    <arg name="map_file" value="$(find lab4)/maps/easy_maze.yaml" />
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
 
-  <!-- AMCL -->
-  <node pkg="amcl" type="amcl" name="amcl">
-    <rosparam command="load" file="$(find lab4)/config/amcl_params.yaml" />
-  </node>
+    <!-- AMCL -->
+    <node pkg="amcl" type="amcl" name="amcl">
+      <rosparam command="load" file="$(find lab4)/config/amcl_sim_params.yaml" />
+    </node>
+
+    <!-- Path Planner -->
+    <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
+      args="--padding 5" />
+  </group>
+  <group unless="$(arg use_sim)">
+    <!-- Map Server -->
+    <arg name="map_file" value="$(find lab4)/maps/final_maze.yaml" />
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+
+    <!-- AMCL -->
+    <node pkg="amcl" type="amcl" name="amcl">
+      <rosparam command="load" file="$(find lab4)/config/amcl_params.yaml" />
+    </node>
+
+    <!-- Path Planner -->
+    <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
+      args="--padding 10" />
+  </group>
 
   <!-- Maze Navigator -->
   <node pkg="lab4" type="maze_navigator.py" name="maze_navigator" output="screen" />
-
-  <!-- Path Planner -->
-  <node pkg="lab3" type="path_planner.py" name="path_planner" output="screen"
-    args="--padding 10" />
 
   <!-- Path Executor -->
   <node pkg="lab4" type="go_to_point.py" name="go_to_point" output="screen" />

@@ -1,4 +1,4 @@
-image: /home/cap1sup/catkin_ws/src/RBE3002_D24_Team13/lab4/maps/final_maze.pgm
+image: final_maze.pgm
 resolution: 0.012500
 origin: [-10.900000, -11.300000, 0.000000]
 negate: 0
